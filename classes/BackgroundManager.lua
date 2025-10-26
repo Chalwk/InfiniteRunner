@@ -11,7 +11,7 @@ function BackgroundManager.new()
     instance.screenWidth = 800
     instance.screenHeight = 600
 
-    -- Parallax layers
+    -- Parallax layers (distant to foreground)
     instance.layers = {
         {
             speed = 0.2,
@@ -44,21 +44,39 @@ end
 function BackgroundManager:generateBackgroundElements()
     for _, layer in ipairs(self.layers) do
         layer.elements = {}
-
-        -- Generate mountains/buildings for each layer
         local elementCount = 10
+
         for i = 1, elementCount do
             local x = (i - 1) * (self.screenWidth / elementCount)
             local height = math.random(50, 200) * (1 - layer.speed * 0.5)
             local width = math.random(80, 200) * (1 - layer.speed * 0.5)
 
-            table.insert(layer.elements, {
+            local element = {
                 x = x,
                 y = self.screenHeight - height,
                 width = width,
                 height = height,
-                peaks = math.random(2, 5)
-            })
+                peaks = math.random(3, 6),
+                points = {}
+            }
+
+            -- Pre-generate a smooth, natural mountain silhouette
+            local peakCount = element.peaks
+            local segmentWidth = element.width / peakCount
+            local lastY = element.y + element.height
+
+            for j = 0, peakCount do
+                local px = element.x + j * segmentWidth
+                local t = j / peakCount
+                local falloff = 1 - math.abs(t - 0.5) * 2
+                local variance = math.random() * 0.4 + 0.6
+                local py = element.y - element.height * falloff * variance
+                py = (py + lastY) / 2
+                lastY = py
+                table.insert(element.points, { x = px, y = py })
+            end
+
+            table.insert(layer.elements, element)
         end
     end
 end
@@ -68,16 +86,25 @@ function BackgroundManager:update(dt, gameSpeed)
         for _, element in ipairs(layer.elements) do
             element.x = element.x - gameSpeed * dt * layer.speed
 
-            -- Wrap around when off screen
+            -- Move pre-generated points too
+            for _, p in ipairs(element.points) do
+                p.x = p.x - gameSpeed * dt * layer.speed
+            end
+
+            -- Wrap around when fully off screen
             if element.x + element.width < 0 then
-                element.x = element.x + self.screenWidth + element.width
+                local offset = self.screenWidth + element.width
+                element.x = element.x + offset
+                for _, p in ipairs(element.points) do
+                    p.x = p.x + offset
+                end
             end
         end
     end
 end
 
 function BackgroundManager:draw()
-    -- Draw sky gradient
+    -- Sky gradient
     for i = 0, self.screenHeight do
         local progress = i / self.screenHeight
         local r = 0.05 + progress * 0.1
@@ -87,52 +114,44 @@ function BackgroundManager:draw()
         love.graphics.line(0, i, self.screenWidth, i)
     end
 
-    -- Draw parallax layers
+    -- Parallax mountain layers
     for _, layer in ipairs(self.layers) do
-        love.graphics.setColor(layer.color)
-
         for _, element in ipairs(layer.elements) do
-            -- Draw mountain/building silhouette
-            self:drawMountain(element.x, element.y, element.width, element.height, element.peaks)
+            love.graphics.setColor(layer.color)
+            self:drawMountain(
+                element.x,
+                element.y,
+                element.width,
+                element.height,
+                element.peaks,
+                element.points
+            )
         end
     end
 
-    -- Draw ground
+    -- Ground base
     love.graphics.setColor(0.3, 0.2, 0.1)
     love.graphics.rectangle("fill", 0, self.screenHeight - 150, self.screenWidth, 150)
 
-    -- Ground details
+    -- Ground texture lines
     love.graphics.setColor(0.4, 0.3, 0.2)
     for i = 0, self.screenWidth, 20 do
         love.graphics.line(i, self.screenHeight - 150, i + 10, self.screenHeight - 140)
     end
 end
 
-function BackgroundManager:drawMountain(x, y, width, height, peaks)
-    local points = { x, y + height }
+function BackgroundManager:drawMountain(x, y, width, height, peaks, points)
+    local poly = { x, y + height }
 
-    -- Generate mountain peaks
-    local segmentWidth = width / (peaks * 2 - 1)
-    for i = 0, peaks * 2 - 1 do
-        local pointX = x + i * segmentWidth
-        local pointY = y
-
-        if i % 2 == 1 then
-            -- Peak
-            pointY = y - height * math.random(80, 100) / 100
-        else
-            -- Valley
-            pointY = y - height * math.random(20, 40) / 100
-        end
-
-        table.insert(points, pointX)
-        table.insert(points, pointY)
+    for _, p in ipairs(points) do
+        table.insert(poly, p.x)
+        table.insert(poly, p.y)
     end
 
-    table.insert(points, x + width)
-    table.insert(points, y + height)
+    table.insert(poly, x + width)
+    table.insert(poly, y + height)
 
-    love.graphics.polygon("fill", points)
+    love.graphics.polygon("fill", poly)
 end
 
 return BackgroundManager
