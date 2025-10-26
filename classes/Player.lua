@@ -86,9 +86,11 @@ function Player:update(dt, gameSpeed)
             self.isOnGround = true
             if self.state == "jumping" then
                 self.state = "running"
-                self.height = self.normalHeight
             end
         end
+    else
+        -- Ensure player stays on ground when not jumping
+        self.y = self.groundY - self.height
     end
 
     -- Update animations
@@ -241,22 +243,18 @@ end
 
 function Player:crouch()
     if self.isOnGround and self.state ~= "crouching" and self.state ~= "sliding" then
-        local oldHeight = self.height
         self.state = "crouching"
         self.height = self.crouchHeight
-        -- Adjust Y position so feet stay on ground
-        self.y = self.y + (oldHeight - 70)
+        self.y = self.groundY - self.height
         self.animationTime = 0
     end
 end
 
 function Player:slide()
     if self.isOnGround and self.state ~= "sliding" and self.state ~= "crouching" then
-        local oldHeight = self.height
         self.state = "sliding"
         self.height = self.crouchHeight
-        -- Adjust Y position so feet stay on ground
-        self.y = self.y + (oldHeight - 70)
+        self.y = self.groundY - self.height
         self.animationTime = 0
     end
 end
@@ -278,16 +276,16 @@ function Player:getHitbox()
     if self.state == "crouching" or self.state == "sliding" then
         return {
             x = self.x - 15,
-            y = self.y, -- Hitbox starts at player's current Y (which is the bottom of crouching player)
+            y = self.y - self.crouchHeight,
             width = 30,
             height = self.crouchHeight
         }
     else
         return {
             x = self.x - 15,
-            y = self.y, -- Hitbox starts at player's current Y
+            y = self.y - self.height,
             width = 30,
-            height = self.normalHeight
+            height = self.height
         }
     end
 end

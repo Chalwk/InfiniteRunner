@@ -175,6 +175,10 @@ end
 function ObstacleManager:checkCollisions(player)
     local playerHitbox = player:getHitbox()
 
+    -- Debug: draw player hitbox (optional)
+    -- love.graphics.setColor(0, 1, 0, 0.3)
+    -- love.graphics.rectangle("line", playerHitbox.x, playerHitbox.y, playerHitbox.width, playerHitbox.height)
+
     for _, obstacle in ipairs(self.obstacles) do
         local obstacleHitbox = {
             x = obstacle.x,
@@ -182,6 +186,10 @@ function ObstacleManager:checkCollisions(player)
             width = obstacle.width,
             height = obstacle.height
         }
+
+        -- Debug: draw obstacle hitbox (optional)
+        -- love.graphics.setColor(1, 0, 0, 0.3)
+        -- love.graphics.rectangle("line", obstacleHitbox.x, obstacleHitbox.y, obstacleHitbox.width, obstacleHitbox.height)
 
         if self:checkRectCollision(playerHitbox, obstacleHitbox) then
             return true
