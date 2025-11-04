@@ -1,124 +1,157 @@
--- Infinite Runner
+-- Infinite Runner Game - Love2D
 -- License: MIT
 -- Copyright (c) 2025 Jericho Crosby (Chalwk)
 
-local Player = require("classes/Player")
-local ObstacleManager = require("classes/ObstacleManager")
-local BackgroundManager = require("classes/BackgroundManager")
+local lg = love.graphics
+local math_min = math.min
 
-local player, obstacleManager, backgroundManager
-local gameState = "playing" -- playing, game_over
-local score = 0
-local highScore = 0
-local gameSpeed = 200
-local baseSpeed = 200
-local speedIncreaseTimer = 0
-local speedIncreaseInterval = 10
+local Game = require("classes.Game")
+local Menu = require("classes.Menu")
+local BackgroundManager = require("classes.BackgroundManager")
+
+local game, menu, backgroundManager
+local gameState = "menu"
 local screenWidth, screenHeight
-local fonts = {}
+local stateTransition = { alpha = 0, duration = 0.5, timer = 0, active = false }
+
+local function updateScreenSize()
+    screenWidth = lg.getWidth()
+    screenHeight = lg.getHeight()
+end
+
+local function startStateTransition(newState)
+    stateTransition = {
+        alpha = 0,
+        duration = 0.3,
+        timer = 0,
+        active = true,
+        targetState = newState
+    }
+end
 
 function love.load()
-    love.window.setTitle("Infinite Runner")
-    screenWidth = love.graphics.getWidth()
-    screenHeight = love.graphics.getHeight()
+    lg.setDefaultFilter("nearest", "nearest")
+    lg.setLineStyle("smooth")
 
-    -- Load fonts
-    fonts.large = love.graphics.newFont(36)
-    fonts.medium = love.graphics.newFont(24)
-    fonts.small = love.graphics.newFont(18)
-
-    player = Player.new()
-    obstacleManager = ObstacleManager.new()
+    game = Game.new()
+    menu = Menu.new()
     backgroundManager = BackgroundManager.new()
 
-    player:setScreenSize(screenWidth, screenHeight)
-    obstacleManager:setScreenSize(screenWidth, screenHeight)
-    backgroundManager:setScreenSize(screenWidth, screenHeight)
-
-    player:reset()
+    updateScreenSize()
+    menu:setScreenSize(screenWidth, screenHeight)
+    game:setScreenSize(screenWidth, screenHeight)
 end
 
 function love.update(dt)
-    if gameState == "playing" then
-        -- Increase game speed over time
-        speedIncreaseTimer = speedIncreaseTimer + dt
-        if speedIncreaseTimer >= speedIncreaseInterval then
-            speedIncreaseTimer = 0
-            gameSpeed = gameSpeed + 20
-        end
+    updateScreenSize()
 
-        player:update(dt, gameSpeed)
-        obstacleManager:update(dt, gameSpeed)
-        backgroundManager:update(dt, gameSpeed)
+    -- Handle state transitions
+    if stateTransition.active then
+        stateTransition.timer = stateTransition.timer + dt
+        stateTransition.alpha = math_min(stateTransition.timer / stateTransition.duration, 1)
 
-        -- Update score based on distance
-        score = score + dt * 10
+        if stateTransition.timer >= stateTransition.duration then
+            gameState = stateTransition.targetState
+            stateTransition.active = false
+            stateTransition.alpha = 0
 
-        -- Check collisions
-        if obstacleManager:checkCollisions(player) then
-            gameState = "game_over"
-            if score > highScore then
-                highScore = score
+            if gameState == "gameover" then
+                menu:setFinalScore(game.score, game.score > game.highScore)
             end
         end
     end
+
+    if gameState == "menu" then
+        menu:update(dt, screenWidth, screenHeight)
+    elseif gameState == "playing" then
+        game:update(dt)
+        if game:isGameOver() then
+            startStateTransition("gameover")
+        end
+    elseif gameState == "gameover" then
+        menu:update(dt, screenWidth, screenHeight)
+    end
+
+    backgroundManager:update(dt)
 end
 
 function love.draw()
-    backgroundManager:draw()
+    local time = love.timer.getTime()
 
-    if gameState == "playing" then
-        player:draw()
-        obstacleManager:draw()
+    -- Draw background based on state
+    if gameState == "menu" or gameState == "gameover" then
+        backgroundManager:drawMenuBackground(screenWidth, screenHeight, time)
+    elseif gameState == "playing" then
+        backgroundManager:drawGameBackground(screenWidth, screenHeight, time)
     end
 
-    -- Draw UI
-    love.graphics.setFont(fonts.medium)
-    love.graphics.setColor(1, 1, 1)
-    love.graphics.print("Score: " .. math.floor(score), 20, 20)
-    love.graphics.print("High Score: " .. math.floor(highScore), 20, 50)
-    love.graphics.print("Speed: " .. math.floor(gameSpeed), 20, 80)
-
-    if gameState == "game_over" then
-        love.graphics.setFont(fonts.large)
-        love.graphics.setColor(1, 0, 0, 0.8)
-        love.graphics.rectangle("fill", 0, 0, screenWidth, screenHeight)
-
-        love.graphics.setColor(1, 1, 1)
-        love.graphics.printf("GAME OVER", 0, screenHeight / 2 - 50, screenWidth, "center")
-        love.graphics.setFont(fonts.medium)
-        love.graphics.printf("Final Score: " .. math.floor(score), 0, screenHeight / 2, screenWidth, "center")
-        love.graphics.printf("Press R to restart", 0, screenHeight / 2 + 50, screenWidth, "center")
+    -- Draw game content
+    if gameState == "menu" or gameState == "gameover" then
+        menu:draw(screenWidth, screenHeight, gameState)
+    elseif gameState == "playing" then
+        game:draw()
     end
 
-    -- Draw controls help
-    love.graphics.setFont(fonts.small)
-    love.graphics.setColor(1, 1, 1, 0.7)
-    love.graphics.print("WASD: Move | Space: Jump | CTRL: Crouch | Shift: Slide", 20, screenHeight - 30)
+    -- Draw transition overlay
+    if stateTransition.active then
+        lg.setColor(0, 0, 0, stateTransition.alpha)
+        lg.rectangle("fill", 0, 0, screenWidth, screenHeight)
+    end
+end
+
+function love.mousepressed(x, y, button, istouch)
+    if button == 1 then
+        if gameState == "menu" then
+            local action = menu:handleClick(x, y, "menu")
+            if action == "start" then
+                startStateTransition("playing")
+                game:startNewGame()
+            elseif action == "quit" then
+                love.event.quit()
+            end
+        elseif gameState == "gameover" then
+            local action = menu:handleClick(x, y, "gameover")
+            if action == "restart" then
+                startStateTransition("playing")
+                game:startNewGame()
+            elseif action == "menu" then
+                startStateTransition("menu")
+            end
+        elseif gameState == "playing" then
+            game:handleClick(x, y)
+        end
+    end
 end
 
 function love.keypressed(key)
-    if gameState == "playing" then
-        player:handleKeyPress(key)
-
-        if key == "escape" then
+    if key == "escape" then
+        if gameState == "playing" then
+            startStateTransition("menu")
+        else
             love.event.quit()
         end
-    elseif gameState == "game_over" then
-        if key == "r" then
-            -- Restart game
-            gameState = "playing"
-            score = 0
-            gameSpeed = baseSpeed
-            speedIncreaseTimer = 0
-            player:reset()
-            obstacleManager:reset()
+    elseif key == "f11" then
+        local fullscreen = love.window.getFullscreen()
+        love.window.setFullscreen(not fullscreen)
+    elseif gameState == "playing" then
+        if key == "space" or key == "up" or key == "w" then
+            game:playerJump()
+        elseif key == "down" or key == "s" then
+            game:playerCrouch(true)
         end
     end
 end
 
 function love.keyreleased(key)
     if gameState == "playing" then
-        player:handleKeyRelease(key)
+        if key == "down" or key == "s" then
+            game:playerCrouch(false)
+        end
     end
+end
+
+function love.resize(w, h)
+    updateScreenSize()
+    menu:setScreenSize(screenWidth, screenHeight)
+    game:setScreenSize(screenWidth, screenHeight)
 end
