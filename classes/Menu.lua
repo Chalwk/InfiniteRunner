@@ -13,7 +13,7 @@ Menu.__index = Menu
 
 local function updateButtonPositions(self)
     local centerX = self.screenWidth / 2
-    local startY = self.screenHeight / 2 - 50
+    local startY = self.screenHeight / 2 + 10 -- button height
 
     -- Main menu buttons
     if self.menuButtons then
@@ -156,17 +156,17 @@ local function drawMenuTitle(self, screenWidth, screenHeight)
     lg.printf("INFINITE RUNNER", 0, centerY - 50, screenWidth, "center")
 
     -- Subtitle
-    lg.setColor(1, 1, 1, 0.8)
+    lg.setColor(0, 0, 0.60, 0.8)
     lg.setFont(self.mediumFont)
-    lg.printf("Endless Adventure", 0, centerY, screenWidth, "center")
+    lg.printf("Endless Adventure", 0, centerY + 20, screenWidth, "center")
 
     -- Draw running stick figures on sides
-    drawRunningStickFigure(self, centerX - 200, centerY + 20, 1.2)
-    drawRunningStickFigure(self, centerX + 200, centerY + 20, 1.2)
+    local stickman_height = centerY + 315
+    drawRunningStickFigure(self, centerX - 200, stickman_height, 1.2)
+    drawRunningStickFigure(self, centerX + 200, stickman_height, 1.2)
 end
 
 local function drawGameOverTitle(self, screenWidth, screenHeight)
-    local centerX = screenWidth / 2
     local centerY = screenHeight / 4
 
     lg.setFont(self.titleFont)

@@ -17,6 +17,20 @@ local lg = love.graphics
 local Game = {}
 Game.__index = Game
 
+function Game:isOverGap()
+    local player = self.player
+    for _, obstacle in ipairs(self.obstacles) do
+        if obstacle.isGap then
+            -- Check if player's horizontal center is within the gap area
+            local px = player.x + player.width / 2
+            if px >= obstacle.x and px <= obstacle.x + obstacle.width then
+                return true
+            end
+        end
+    end
+    return false
+end
+
 function Game.new()
     local instance = setmetatable({}, Game)
 
@@ -303,21 +317,42 @@ function Game:updatePlayer(dt)
     player.animationTime = player.animationTime + dt
     player.runCycle = (player.runCycle + dt * 10) % (2 * math.pi)
 
-    -- Handle jumping physics
+    -- If player is over a gap and not already jumping, start falling
+    if not player.isJumping and self:isOverGap() then
+        player.isJumping = true
+        player.jumpVelocity = 0
+    end
+
+    -- Handle jumping or falling physics
     if player.isJumping then
         player.jumpVelocity = player.jumpVelocity + player.gravity * dt
         player.y = player.y + player.jumpVelocity * dt
 
-        -- Check if landed
+        -- Check if landed or still falling through a gap
         if player.y >= player.groundY - player.height then
-            player.y = player.groundY - player.height
-            player.isJumping = false
-            player.jumpVelocity = 0
-            self:createParticles(player.x + player.width / 2, player.y + player.height,
-                { 0.9, 0.9, 0.9 }, 5)
+            if not self:isOverGap() then
+                -- Land on solid ground
+                player.y = player.groundY - player.height
+                player.isJumping = false
+                player.jumpVelocity = 0
+                self:createParticles(player.x + player.width / 2, player.y + player.height,
+                    { 0.9, 0.9, 0.9 }, 5)
+            else
+                -- Still over a gap: keep falling
+                player.isJumping = true
+            end
+        end
+    end
+
+    -- Check if player fell off the screen (death condition)
+    if player.y > self.screenHeight then
+        self.gameOver = true
+        if self.score > self.highScore then
+            self.highScore = self.score
         end
     end
 end
+
 
 function Game:updateObstacles(dt)
     local speed = self.gameSpeed * dt
@@ -589,10 +624,10 @@ function Game:drawUI()
     -- Speed indicator
     local speedPercent = (self.gameSpeed - self.baseSpeed) / (self.maxSpeed - self.baseSpeed)
     lg.setColor(0.8, 0.8, 1)
-    lg.rectangle("fill", 20, 110, 150 * speedPercent, 15)
+    lg.rectangle("fill", 20, 140, 150 * speedPercent, 15)
     lg.setColor(1, 1, 1)
-    lg.rectangle("line", 20, 110, 150, 15)
-    lg.print("Speed", 25, 112)
+    lg.rectangle("line", 20, 140, 150, 15)
+    lg.print("Speed:", 20, 108)
 
     -- Active power-ups
     local yPos = 140
@@ -703,9 +738,7 @@ function Game:draw()
     self:drawParticles()
     self:drawUI()
 
-    if self.gameOver then
-        self:drawGameOver()
-    end
+    if self.gameOver then self:drawGameOver() end
 end
 
 function Game:startNewGame()
@@ -740,10 +773,5 @@ function Game:setScreenSize(width, height)
 end
 
 function Game:isGameOver() return self.gameOver end
-
-function Game:handleClick(x, y)
-    -- Game over screen handles clicks in main.lua
-    if self.gameOver then return end
-end
 
 return Game

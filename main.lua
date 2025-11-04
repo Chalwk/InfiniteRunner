@@ -101,7 +101,9 @@ end
 
 function love.mousepressed(x, y, button, istouch)
     if button == 1 then
-        if gameState == "menu" then
+        local currentState = gameState
+
+        if currentState == "menu" then
             local action = menu:handleClick(x, y, "menu")
             if action == "start" then
                 startStateTransition("playing")
@@ -109,7 +111,7 @@ function love.mousepressed(x, y, button, istouch)
             elseif action == "quit" then
                 love.event.quit()
             end
-        elseif gameState == "gameover" then
+        elseif currentState == "gameover" then
             local action = menu:handleClick(x, y, "gameover")
             if action == "restart" then
                 startStateTransition("playing")
@@ -117,34 +119,39 @@ function love.mousepressed(x, y, button, istouch)
             elseif action == "menu" then
                 startStateTransition("menu")
             end
-        -- Remove the empty playing state click handler since Game:handleClick doesn't do anything
         end
     end
 end
 
 function love.keypressed(key)
+    local currentState = gameState
+
     if key == "escape" then
-        if gameState == "playing" then
+        if currentState == "playing" then
             startStateTransition("menu")
-        elseif gameState == "gameover" then
-            startStateTransition("menu")  -- Allow ESC to go to menu from game over
-        else
+        elseif currentState == "gameover" then
+            startStateTransition("menu")
+        elseif currentState == "menu" then
             love.event.quit()
         end
     elseif key == "f11" then
         local fullscreen = love.window.getFullscreen()
         love.window.setFullscreen(not fullscreen)
-    elseif gameState == "playing" then
-        if key == "space" or key == "up" or key == "w" then
-            game:playerJump()
-        elseif key == "down" or key == "s" then
-            game:playerCrouch(true)
+    elseif currentState == "playing" then
+        if not game:isGameOver() then
+            if key == "space" or key == "up" or key == "w" then
+                game:playerJump()
+            elseif key == "down" or key == "s" then
+                game:playerCrouch(true)
+            end
         end
     end
 end
 
 function love.keyreleased(key)
-    if gameState == "playing" then
+    local currentState = stateTransition.active and stateTransition.targetState or gameState
+
+    if currentState == "playing" then
         if key == "down" or key == "s" then
             game:playerCrouch(false)
         end
