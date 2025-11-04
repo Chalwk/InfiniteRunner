@@ -117,8 +117,7 @@ function love.mousepressed(x, y, button, istouch)
             elseif action == "menu" then
                 startStateTransition("menu")
             end
-        elseif gameState == "playing" then
-            game:handleClick(x, y)
+        -- Remove the empty playing state click handler since Game:handleClick doesn't do anything
         end
     end
 end
@@ -127,6 +126,8 @@ function love.keypressed(key)
     if key == "escape" then
         if gameState == "playing" then
             startStateTransition("menu")
+        elseif gameState == "gameover" then
+            startStateTransition("menu")  -- Allow ESC to go to menu from game over
         else
             love.event.quit()
         end
