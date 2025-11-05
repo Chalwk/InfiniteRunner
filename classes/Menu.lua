@@ -180,7 +180,7 @@ local function drawMenuTitle(self, screenWidth, screenHeight)
     drawRunningStickFigure(self, centerX + 200, stickman_height, 1.2)
 end
 
-local function drawGameOverTitle(self, screenWidth, screenHeight)
+local function drawGameOver(self, screenWidth, screenHeight)
     local centerY = screenHeight / 4
 
     lg.setFont(self.titleFont)
@@ -196,6 +196,10 @@ local function drawGameOverTitle(self, screenWidth, screenHeight)
         lg.setColor(1, 0.8, 0.2)
         lg.setFont(self.mediumFont)
         lg.printf("NEW HIGH SCORE!", 0, centerY + 70, screenWidth, "center")
+    end
+
+    for _, button in ipairs(self.gameOverButtons) do
+        drawButton(self, button, self.buttonHover == button.action)
     end
 end
 
@@ -251,10 +255,7 @@ function Menu:draw(screenWidth, screenHeight, state)
         lg.printf("Use SPACE/UP to jump and DOWN to crouch. Avoid obstacles and collect power-ups!",
             50, screenHeight - 100, screenWidth - 100, "center")
     elseif state == "gameover" then
-        drawGameOverTitle(self, screenWidth, screenHeight)
-        for _, button in ipairs(self.gameOverButtons) do
-            drawButton(self, button, self.buttonHover == button.action)
-        end
+        drawGameOver(self, screenWidth, screenHeight)
     end
 
     -- Copyright

@@ -17,6 +17,13 @@ local lg = love.graphics
 local Game = {}
 Game.__index = Game
 
+local function rectIntersect(x1, y1, w1, h1, x2, y2, w2, h2)
+    return x1 < x2 + w2 and
+        x1 + w1 > x2 and
+        y1 < y2 + h2 and
+        y1 + h1 > y2
+end
+
 local function isOverGap(self)
     local player = self.player
     for _, obstacle in ipairs(self.obstacles) do
@@ -73,6 +80,21 @@ local function spawnObstacle(self)
     table_insert(self.obstacles, newObstacle)
 end
 
+local function createParticles(self, x, y, color, count)
+    for _ = 1, count do
+        table_insert(self.particles, {
+            x = x,
+            y = y,
+            dx = (love_random() - 0.5) * 200,
+            dy = (love_random() - 0.5) * 200 - 50,
+            life = love_random(0.5, 1.5),
+            color = color or { 1, 1, 1 },
+            size = love_random(2, 6),
+            rotation = love_random() * 6.28
+        })
+    end
+end
+
 local function updatePowerUps(self, dt)
     -- Check for expired power-ups
     for powerType, effect in pairs(self.activePowerUps) do
@@ -115,7 +137,7 @@ local function activatePowerUp(self, powerUp)
     self.activePowerUps[effect.type] = effect
 
     -- Visual feedback
-    self:createParticles(powerUp.x + powerUp.width / 2, powerUp.y + powerUp.height / 2, powerUp.color, 15)
+    createParticles(self, powerUp.x + powerUp.width / 2, powerUp.y + powerUp.height / 2, powerUp.color, 15)
 end
 
 local function updatePowerUpsList(self, dt)
@@ -128,7 +150,7 @@ local function updatePowerUpsList(self, dt)
         powerUp.bounce = powerUp.bounce + dt * 5
 
         -- Check collection
-        if not powerUp.collected and self:rectIntersect(
+        if not powerUp.collected and rectIntersect(
                 self.player.x, self.player.y, self.player.width, self.player.height,
                 powerUp.x, powerUp.y, powerUp.width, powerUp.height) then
             powerUp.collected = true
@@ -193,7 +215,7 @@ local function checkCollisions(self)
 
     local player = self.player
     for _, obstacle in ipairs(self.obstacles) do
-        if self:rectIntersect(player.x, player.y, player.width, player.height,
+        if rectIntersect(player.x, player.y, player.width, player.height,
                 obstacle.x, obstacle.y, obstacle.width, obstacle.height) then
             return true
         end
@@ -227,7 +249,7 @@ local function updatePlayer(self, dt)
                 player.y = player.groundY - player.height
                 player.isJumping = false
                 player.jumpVelocity = 0
-                self:createParticles(player.x + player.width / 2, player.y + player.height,
+                createParticles(self, player.x + player.width / 2, player.y + player.height,
                     { 0.9, 0.9, 0.9 }, 5)
             else
                 -- Still over a gap: keep falling
@@ -269,6 +291,213 @@ local function updateParticles(self, dt)
 
         if particle.life <= 0 then
             table_remove(self.particles, i)
+        end
+    end
+end
+
+local function drawPlayer(self)
+    local player = self.player
+    local centerX = player.x + player.width / 2
+    local centerY = player.y + player.height / 2
+
+    lg.push()
+    lg.translate(centerX, centerY)
+
+    -- Body color based on power-ups
+    local bodyColor = { 0.9, 0.9, 0.9 }
+    if self.activePowerUps.invincible then
+        local pulse = (math_sin(self.time * 10) + 1) * 0.5
+        bodyColor = { 1, 1, pulse }
+    elseif self.activePowerUps.speed then
+        bodyColor = { 0.2, 0.9, 0.2 }
+    elseif self.activePowerUps.double_points then
+        bodyColor = { 0.2, 0.7, 1 }
+    end
+
+    lg.setColor(bodyColor)
+    lg.setLineWidth(3)
+
+    if player.isCrouching then
+        -- Crouching pose
+        lg.circle("line", 0, -5, 8) -- Head
+        lg.line(0, 3, 0, 10)        -- Body
+        lg.line(0, 10, -10, 15)     -- Left leg
+        lg.line(0, 10, 10, 15)      -- Right leg
+        lg.line(0, 5, -8, 8)        -- Left arm
+        lg.line(0, 5, 8, 8)         -- Right arm
+    elseif player.isJumping then
+        -- Jumping pose
+        lg.circle("line", 0, -10, 8) -- Head
+        lg.line(0, -2, 0, 8)         -- Body
+        lg.line(0, 8, -12, 15)       -- Left leg
+        lg.line(0, 8, 12, 15)        -- Right leg
+        lg.line(0, 0, -15, -5)       -- Left arm
+        lg.line(0, 0, 15, -5)        -- Right arm
+    else
+        -- Running pose
+        local legOffset = math_sin(player.runCycle) * 8
+        local armOffset = math_sin(player.runCycle + math.pi) * 6
+
+        lg.circle("line", 0, -10, 8)       -- Head
+        lg.line(0, -2, 0, 10)              -- Body
+        lg.line(0, 10, -8, 15 + legOffset) -- Left leg
+        lg.line(0, 10, 8, 15 - legOffset)  -- Right leg
+        lg.line(0, 2, -12, 2 + armOffset)  -- Left arm
+        lg.line(0, 2, 12, 2 - armOffset)   -- Right arm
+    end
+
+    lg.setLineWidth(1)
+    lg.pop()
+end
+
+local function drawParticles(self)
+    for _, particle in ipairs(self.particles) do
+        local alpha = math_min(1, particle.life * 2)
+        lg.setColor(particle.color[1], particle.color[2], particle.color[3], alpha)
+        lg.push()
+        lg.translate(particle.x, particle.y)
+        lg.rotate(particle.rotation)
+        lg.rectangle("fill", -particle.size / 2, -particle.size / 2, particle.size, particle.size)
+        lg.pop()
+    end
+end
+
+local function drawUI(self)
+    -- Score display
+    lg.setColor(1, 1, 1)
+    lg.setFont(lg.newFont(24))
+    lg.print("Score: " .. math_floor(self.score), 20, 20)
+    lg.print("High Score: " .. math_floor(self.highScore), 20, 50)
+
+    -- Distance
+    lg.print("Distance: " .. math_floor(self.distance) .. "m", 20, 80)
+
+    -- Speed indicator
+    local speedPercent = (self.gameSpeed - self.baseSpeed) / (self.maxSpeed - self.baseSpeed)
+    lg.setColor(0.8, 0.8, 1)
+    lg.rectangle("fill", 20, 140, 150 * speedPercent, 15)
+    lg.setColor(1, 1, 1)
+    lg.rectangle("line", 20, 140, 150, 15)
+    lg.print("Speed:", 20, 108)
+
+    -- Active power-ups
+    local yPos = 140
+    for powerType, effect in pairs(self.activePowerUps) do
+        local timeLeft = effect.endTime - self.time
+        local color = { 1, 1, 1 }
+        local text = ""
+
+        if powerType == "speed" then
+            color = { 0.2, 0.8, 0.2 }
+            text = "Speed Boost: " .. math_floor(timeLeft) .. "s"
+        elseif powerType == "invincible" then
+            color = { 1, 1, 0.2 }
+            text = "Invincible: " .. math_floor(timeLeft) .. "s"
+        elseif powerType == "magnet" then
+            color = { 0.8, 0.3, 0.8 }
+            text = "Magnet: " .. math_floor(timeLeft) .. "s"
+        elseif powerType == "double_points" then
+            color = { 0.2, 0.7, 1 }
+            text = "2× Points: " .. math_floor(timeLeft) .. "s"
+        elseif powerType == "slow_mo" then
+            color = { 0.5, 0.5, 1 }
+            text = "Slow Mo: " .. math_floor(timeLeft) .. "s"
+        end
+
+        lg.setColor(color)
+        lg.print(text, 20, yPos)
+        yPos = yPos + 25
+    end
+
+    -- Controls hint
+    lg.setColor(1, 1, 1, 0.6)
+    lg.setFont(lg.newFont(14))
+    lg.print("SPACE/UP: Jump | DOWN: Crouch | ESC: Menu", 20, self.screenHeight - 30)
+end
+
+local function drawObstacles(self)
+    for _, obstacle in ipairs(self.obstacles) do
+        lg.setColor(obstacle.color)
+
+        if obstacle.type == "spikes" then
+            -- Draw spikes
+            for i = 1, 6 do
+                local spikeX = obstacle.x + (i - 1) * 10
+                lg.polygon("fill",
+                    spikeX, obstacle.y + obstacle.height,
+                    spikeX + 5, obstacle.y,
+                    spikeX + 10, obstacle.y + obstacle.height
+                )
+            end
+        elseif obstacle.isGap then
+            -- Draw gap as a dark rectangle
+            lg.setColor(0.2, 0.2, 0.3)
+            lg.rectangle("fill", obstacle.x, obstacle.y, obstacle.width, obstacle.height)
+            lg.setColor(0.4, 0.4, 0.6)
+            lg.rectangle("line", obstacle.x, obstacle.y, obstacle.width, obstacle.height)
+        else
+            -- Regular obstacle
+            lg.rectangle("fill", obstacle.x, obstacle.y, obstacle.width, obstacle.height)
+            lg.setColor(1, 1, 1, 0.3)
+            lg.rectangle("line", obstacle.x, obstacle.y, obstacle.width, obstacle.height)
+        end
+    end
+end
+
+local function drawPowerUps(self)
+    for _, powerUp in ipairs(self.powerUps) do
+        local bounce = math_sin(powerUp.bounce) * 5
+        local centerX = powerUp.x + powerUp.width / 2
+        local centerY = powerUp.y + powerUp.height / 2 + bounce
+
+        lg.push()
+        lg.translate(centerX, centerY)
+
+        -- Pulsing glow effect
+        local pulse = (math_sin(self.time * 5) + 1) * 0.3 + 0.7
+        lg.setColor(powerUp.color[1], powerUp.color[2], powerUp.color[3], 0.3)
+        lg.circle("fill", 0, 0, powerUp.width * 0.8 * pulse)
+
+        -- Main power-up
+        lg.setColor(powerUp.color)
+
+        if powerUp.type == "speed_boost" then
+            lg.rectangle("fill", -6, -6, 12, 12)
+            lg.setColor(1, 1, 1)
+            lg.print("⚡", -4, -8)
+        elseif powerUp.type == "invincibility" then
+            lg.circle("fill", 0, 0, 8)
+            lg.setColor(1, 1, 1)
+            lg.print("🛡", -4, -8)
+        elseif powerUp.type == "magnet" then
+            lg.rectangle("fill", -8, -4, 16, 8)
+            lg.setColor(1, 1, 1)
+            lg.print("🧲", -4, -8)
+        elseif powerUp.type == "double_points" then
+            lg.polygon("fill", 0, -8, -8, 8, 8, 8)
+            lg.setColor(1, 1, 1)
+            lg.print("2×", -4, -4)
+        elseif powerUp.type == "slow_motion" then
+            lg.circle("fill", 0, 0, 10)
+            lg.setColor(1, 1, 1)
+            lg.print("🐌", -4, -8)
+        end
+
+        lg.pop()
+    end
+end
+
+local function drawGround(self)
+    for _, segment in ipairs(self.groundSegments) do
+        -- Ground fill
+        lg.setColor(0.3, 0.6, 0.3)
+        lg.rectangle("fill", segment.x, segment.y, segment.width, segment.height)
+
+        -- Ground pattern
+        lg.setColor(0.4, 0.7, 0.4)
+        for i = 1, 5 do
+            local patternX = segment.x + (i - 1) * 20
+            lg.rectangle("fill", patternX, segment.y, 10, 5)
         end
     end
 end
@@ -422,18 +651,11 @@ function Game.new()
     return instance
 end
 
-function Game:rectIntersect(x1, y1, w1, h1, x2, y2, w2, h2)
-    return x1 < x2 + w2 and
-        x1 + w1 > x2 and
-        y1 < y2 + h2 and
-        y1 + h1 > y2
-end
-
 function Game:playerJump()
     if not self.player.isJumping and not self.player.isCrouching then
         self.player.isJumping = true
         self.player.jumpVelocity = self.player.jumpPower
-        self:createParticles(self.player.x + self.player.width / 2, self.player.y + self.player.height,
+        createParticles(self, self.player.x + self.player.width / 2, self.player.y + self.player.height,
             { 0.7, 0.7, 0.9 }, 8)
     end
 end
@@ -448,228 +670,6 @@ function Game:playerCrouch(crouching)
             self.player.height = self.player.normalHeight
             self.player.y = self.player.groundY - self.player.height
         end
-    end
-end
-
-function Game:createParticles(x, y, color, count)
-    for _ = 1, count do
-        table_insert(self.particles, {
-            x = x,
-            y = y,
-            dx = (love_random() - 0.5) * 200,
-            dy = (love_random() - 0.5) * 200 - 50,
-            life = love_random(0.5, 1.5),
-            color = color or { 1, 1, 1 },
-            size = love_random(2, 6),
-            rotation = love_random() * 6.28
-        })
-    end
-end
-
-function Game:drawPlayer()
-    local player = self.player
-    local centerX = player.x + player.width / 2
-    local centerY = player.y + player.height / 2
-
-    lg.push()
-    lg.translate(centerX, centerY)
-
-    -- Body color based on power-ups
-    local bodyColor = { 0.9, 0.9, 0.9 }
-    if self.activePowerUps.invincible then
-        local pulse = (math_sin(self.time * 10) + 1) * 0.5
-        bodyColor = { 1, 1, pulse }
-    elseif self.activePowerUps.speed then
-        bodyColor = { 0.2, 0.9, 0.2 }
-    elseif self.activePowerUps.double_points then
-        bodyColor = { 0.2, 0.7, 1 }
-    end
-
-    lg.setColor(bodyColor)
-    lg.setLineWidth(3)
-
-    if player.isCrouching then
-        -- Crouching pose
-        lg.circle("line", 0, -5, 8) -- Head
-        lg.line(0, 3, 0, 10)        -- Body
-        lg.line(0, 10, -10, 15)     -- Left leg
-        lg.line(0, 10, 10, 15)      -- Right leg
-        lg.line(0, 5, -8, 8)        -- Left arm
-        lg.line(0, 5, 8, 8)         -- Right arm
-    elseif player.isJumping then
-        -- Jumping pose
-        lg.circle("line", 0, -10, 8) -- Head
-        lg.line(0, -2, 0, 8)         -- Body
-        lg.line(0, 8, -12, 15)       -- Left leg
-        lg.line(0, 8, 12, 15)        -- Right leg
-        lg.line(0, 0, -15, -5)       -- Left arm
-        lg.line(0, 0, 15, -5)        -- Right arm
-    else
-        -- Running pose
-        local legOffset = math_sin(player.runCycle) * 8
-        local armOffset = math_sin(player.runCycle + math.pi) * 6
-
-        lg.circle("line", 0, -10, 8)       -- Head
-        lg.line(0, -2, 0, 10)              -- Body
-        lg.line(0, 10, -8, 15 + legOffset) -- Left leg
-        lg.line(0, 10, 8, 15 - legOffset)  -- Right leg
-        lg.line(0, 2, -12, 2 + armOffset)  -- Left arm
-        lg.line(0, 2, 12, 2 - armOffset)   -- Right arm
-    end
-
-    lg.setLineWidth(1)
-    lg.pop()
-end
-
-function Game:drawObstacles()
-    for _, obstacle in ipairs(self.obstacles) do
-        lg.setColor(obstacle.color)
-
-        if obstacle.type == "spikes" then
-            -- Draw spikes
-            for i = 1, 6 do
-                local spikeX = obstacle.x + (i - 1) * 10
-                lg.polygon("fill",
-                    spikeX, obstacle.y + obstacle.height,
-                    spikeX + 5, obstacle.y,
-                    spikeX + 10, obstacle.y + obstacle.height
-                )
-            end
-        elseif obstacle.isGap then
-            -- Draw gap as a dark rectangle
-            lg.setColor(0.2, 0.2, 0.3)
-            lg.rectangle("fill", obstacle.x, obstacle.y, obstacle.width, obstacle.height)
-            lg.setColor(0.4, 0.4, 0.6)
-            lg.rectangle("line", obstacle.x, obstacle.y, obstacle.width, obstacle.height)
-        else
-            -- Regular obstacle
-            lg.rectangle("fill", obstacle.x, obstacle.y, obstacle.width, obstacle.height)
-            lg.setColor(1, 1, 1, 0.3)
-            lg.rectangle("line", obstacle.x, obstacle.y, obstacle.width, obstacle.height)
-        end
-    end
-end
-
-function Game:drawPowerUps()
-    for _, powerUp in ipairs(self.powerUps) do
-        local bounce = math_sin(powerUp.bounce) * 5
-        local centerX = powerUp.x + powerUp.width / 2
-        local centerY = powerUp.y + powerUp.height / 2 + bounce
-
-        lg.push()
-        lg.translate(centerX, centerY)
-
-        -- Pulsing glow effect
-        local pulse = (math_sin(self.time * 5) + 1) * 0.3 + 0.7
-        lg.setColor(powerUp.color[1], powerUp.color[2], powerUp.color[3], 0.3)
-        lg.circle("fill", 0, 0, powerUp.width * 0.8 * pulse)
-
-        -- Main power-up
-        lg.setColor(powerUp.color)
-
-        if powerUp.type == "speed_boost" then
-            lg.rectangle("fill", -6, -6, 12, 12)
-            lg.setColor(1, 1, 1)
-            lg.print("⚡", -4, -8)
-        elseif powerUp.type == "invincibility" then
-            lg.circle("fill", 0, 0, 8)
-            lg.setColor(1, 1, 1)
-            lg.print("🛡", -4, -8)
-        elseif powerUp.type == "magnet" then
-            lg.rectangle("fill", -8, -4, 16, 8)
-            lg.setColor(1, 1, 1)
-            lg.print("🧲", -4, -8)
-        elseif powerUp.type == "double_points" then
-            lg.polygon("fill", 0, -8, -8, 8, 8, 8)
-            lg.setColor(1, 1, 1)
-            lg.print("2×", -4, -4)
-        elseif powerUp.type == "slow_motion" then
-            lg.circle("fill", 0, 0, 10)
-            lg.setColor(1, 1, 1)
-            lg.print("🐌", -4, -8)
-        end
-
-        lg.pop()
-    end
-end
-
-function Game:drawGround()
-    for _, segment in ipairs(self.groundSegments) do
-        -- Ground fill
-        lg.setColor(0.3, 0.6, 0.3)
-        lg.rectangle("fill", segment.x, segment.y, segment.width, segment.height)
-
-        -- Ground pattern
-        lg.setColor(0.4, 0.7, 0.4)
-        for i = 1, 5 do
-            local patternX = segment.x + (i - 1) * 20
-            lg.rectangle("fill", patternX, segment.y, 10, 5)
-        end
-    end
-end
-
-function Game:drawUI()
-    -- Score display
-    lg.setColor(1, 1, 1)
-    lg.setFont(lg.newFont(24))
-    lg.print("Score: " .. math_floor(self.score), 20, 20)
-    lg.print("High Score: " .. math_floor(self.highScore), 20, 50)
-
-    -- Distance
-    lg.print("Distance: " .. math_floor(self.distance) .. "m", 20, 80)
-
-    -- Speed indicator
-    local speedPercent = (self.gameSpeed - self.baseSpeed) / (self.maxSpeed - self.baseSpeed)
-    lg.setColor(0.8, 0.8, 1)
-    lg.rectangle("fill", 20, 140, 150 * speedPercent, 15)
-    lg.setColor(1, 1, 1)
-    lg.rectangle("line", 20, 140, 150, 15)
-    lg.print("Speed:", 20, 108)
-
-    -- Active power-ups
-    local yPos = 140
-    for powerType, effect in pairs(self.activePowerUps) do
-        local timeLeft = effect.endTime - self.time
-        local color = { 1, 1, 1 }
-        local text = ""
-
-        if powerType == "speed" then
-            color = { 0.2, 0.8, 0.2 }
-            text = "Speed Boost: " .. math_floor(timeLeft) .. "s"
-        elseif powerType == "invincible" then
-            color = { 1, 1, 0.2 }
-            text = "Invincible: " .. math_floor(timeLeft) .. "s"
-        elseif powerType == "magnet" then
-            color = { 0.8, 0.3, 0.8 }
-            text = "Magnet: " .. math_floor(timeLeft) .. "s"
-        elseif powerType == "double_points" then
-            color = { 0.2, 0.7, 1 }
-            text = "2× Points: " .. math_floor(timeLeft) .. "s"
-        elseif powerType == "slow_mo" then
-            color = { 0.5, 0.5, 1 }
-            text = "Slow Mo: " .. math_floor(timeLeft) .. "s"
-        end
-
-        lg.setColor(color)
-        lg.print(text, 20, yPos)
-        yPos = yPos + 25
-    end
-
-    -- Controls hint
-    lg.setColor(1, 1, 1, 0.6)
-    lg.setFont(lg.newFont(14))
-    lg.print("SPACE/UP: Jump | DOWN: Crouch | ESC: Menu", 20, self.screenHeight - 30)
-end
-
-function Game:drawParticles()
-    for _, particle in ipairs(self.particles) do
-        local alpha = math_min(1, particle.life * 2)
-        lg.setColor(particle.color[1], particle.color[2], particle.color[3], alpha)
-        lg.push()
-        lg.translate(particle.x, particle.y)
-        lg.rotate(particle.rotation)
-        lg.rectangle("fill", -particle.size / 2, -particle.size / 2, particle.size, particle.size)
-        lg.pop()
     end
 end
 
@@ -701,12 +701,12 @@ function Game:update(dt)
 end
 
 function Game:draw()
-    self:drawGround()
-    self:drawObstacles()
-    self:drawPowerUps()
-    self:drawPlayer()
-    self:drawParticles()
-    self:drawUI()
+    drawGround(self)
+    drawObstacles(self)
+    drawPowerUps(self)
+    drawPlayer(self)
+    drawParticles(self)
+    drawUI(self)
 end
 
 function Game:startNewGame()
