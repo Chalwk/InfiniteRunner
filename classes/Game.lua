@@ -186,6 +186,48 @@ local function updateObstacles(self, dt)
             obstacle.y = obstacle.originalY + math_sin(obstacle.moveTime) * obstacle.moveRange
         end
 
+        -- Handle bouncing ball obstacle
+        if obstacle.isBouncing then
+            obstacle.bounceTime = (obstacle.bounceTime or 0) + dt * obstacle.bounceSpeed
+            local bounceOffset = math_sin(obstacle.bounceTime) * obstacle.bounceHeight
+            obstacle.y = obstacle.originalY + bounceOffset
+        end
+
+        -- Handle disappearing platform
+        if obstacle.isDisappearing then
+            obstacle.timer = obstacle.timer + dt
+            if obstacle.active then
+                if obstacle.timer >= obstacle.disappearTime then
+                    obstacle.active = false
+                    obstacle.timer = 0
+                end
+            else
+                if obstacle.timer >= obstacle.reappearTime then
+                    obstacle.active = true
+                    obstacle.timer = 0
+                end
+            end
+        end
+
+        -- Handle laser beam
+        if obstacle.isLaser then
+            obstacle.timer = (obstacle.timer or 0) + dt
+            local cycleTime = obstacle.activeTime + obstacle.inactiveTime
+
+            if obstacle.timer > cycleTime then
+                obstacle.timer = obstacle.timer - cycleTime
+            end
+
+            local wasActive = obstacle.isActive
+            obstacle.isActive = obstacle.timer > obstacle.inactiveTime
+
+            -- Create warning particles when about to activate
+            if not wasActive and obstacle.isActive and obstacle.timer - obstacle.inactiveTime < 0.1 then
+                createParticles(self, obstacle.x, obstacle.y + obstacle.height / 2,
+                    obstacle.warningColor, 10)
+            end
+        end
+
         -- Check if passed
         if not obstacle.passed and obstacle.x + obstacle.width < self.player.x then
             obstacle.passed = true
@@ -215,10 +257,17 @@ local function checkCollisions(self)
 
     local player = self.player
     for _, obstacle in ipairs(self.obstacles) do
+        if obstacle.isDisappearing and not obstacle.active then goto continue end
+
+        -- Skip collision for inactive lasers
+        if obstacle.isLaser and not obstacle.isActive then goto continue end
+
         if rectIntersect(player.x, player.y, player.width, player.height,
                 obstacle.x, obstacle.y, obstacle.width, obstacle.height) then
             return true
         end
+
+        ::continue::
     end
 
     return false
@@ -417,6 +466,11 @@ end
 
 local function drawObstacles(self)
     for _, obstacle in ipairs(self.obstacles) do
+        -- Skip drawing inactive disappearing platforms
+        if obstacle.isDisappearing and not obstacle.active then
+            goto continue
+        end
+
         lg.setColor(obstacle.color)
 
         if obstacle.type == "spikes" then
@@ -435,12 +489,149 @@ local function drawObstacles(self)
             lg.rectangle("fill", obstacle.x, obstacle.y, obstacle.width, obstacle.height)
             lg.setColor(0.4, 0.4, 0.6)
             lg.rectangle("line", obstacle.x, obstacle.y, obstacle.width, obstacle.height)
+        elseif obstacle.type == "bouncing_ball" then
+            -- Draw bouncing ball
+            lg.setColor(obstacle.color)
+            lg.circle("fill", obstacle.x + obstacle.width / 2,
+                obstacle.y + obstacle.height / 2, obstacle.width / 2)
+            lg.setColor(1, 1, 1, 0.3)
+            lg.circle("line", obstacle.x + obstacle.width / 2,
+                obstacle.y + obstacle.height / 2, obstacle.width / 2)
+
+            -- Add a highlight to make it look more like a ball
+            lg.setColor(1, 1, 1, 0.4)
+            lg.circle("fill", obstacle.x + obstacle.width / 2 - obstacle.width / 6,
+                obstacle.y + obstacle.height / 2 - obstacle.height / 6, obstacle.width / 6)
+        elseif obstacle.type == "disappearing_platform" then
+            -- Draw disappearing platform with transparency based on active state
+            local alpha = obstacle.active and 1 or 0.3
+            lg.setColor(obstacle.color[1], obstacle.color[2], obstacle.color[3], alpha)
+            lg.rectangle("fill", obstacle.x, obstacle.y, obstacle.width, obstacle.height)
+
+            -- Pattern on the platform
+            lg.setColor(0.2, 0.5, 0.6, alpha * 0.8)
+            for i = 1, 4 do
+                local patternX = obstacle.x + (i - 1) * 20
+                lg.rectangle("fill", patternX, obstacle.y, 10, 5)
+            end
+
+            -- Blinking effect when about to disappear
+            if obstacle.active and obstacle.timer > obstacle.disappearTime * 0.7 then
+                local blink = math_sin(self.time * 10) > 0
+                if blink then
+                    lg.setColor(1, 1, 1, 0.8)
+                    lg.rectangle("line", obstacle.x, obstacle.y, obstacle.width, obstacle.height)
+                end
+            end
+        elseif obstacle.type == "laser_beam" then
+            if obstacle.isActive then
+                -- Active laser beam with glow effect
+                lg.setColor(obstacle.color)
+                lg.rectangle("fill", obstacle.x, obstacle.y, obstacle.width, obstacle.height)
+
+                -- Laser glow
+                lg.setColor(1, 0.5, 0.5, 0.6)
+                lg.rectangle("fill", obstacle.x - 5, obstacle.y - 5, obstacle.width + 10, obstacle.height + 10)
+
+                -- Core of the laser
+                lg.setColor(1, 1, 1, 0.8)
+                lg.rectangle("fill", obstacle.x + 2, obstacle.y, obstacle.width - 4, obstacle.height)
+            else
+                -- Inactive/warning state with pulsing effect
+                local warningProgress = (obstacle.timer / obstacle.inactiveTime) * math.pi * 2
+                local pulse = (math_sin(warningProgress * 5) + 1) * 0.5
+                lg.setColor(obstacle.warningColor[1], obstacle.warningColor[2],
+                    obstacle.warningColor[3], pulse)
+                lg.rectangle("fill", obstacle.x, obstacle.y, obstacle.width, obstacle.height)
+
+                -- Warning stripes
+                lg.setColor(1, 1, 1, pulse * 0.8)
+                for i = 1, 3 do
+                    local stripeY = obstacle.y + (i - 1) * (obstacle.height / 3)
+                    lg.rectangle("fill", obstacle.x, stripeY, obstacle.width, obstacle.height / 8)
+                end
+            end
+                elseif obstacle.type == "moving_spikes_wall" then
+                    -- Draw the main wall
+                    lg.setColor(obstacle.color)
+                    lg.rectangle("fill", obstacle.x, obstacle.y, obstacle.width, obstacle.height)
+
+                    -- Draw spikes on the left side of the wall (previously on the right)
+                    lg.setColor(0.3, 0.1, 0.1)
+                    for i = 1, 6 do
+                        local spikeY = obstacle.y + (i - 1) * 35
+                        lg.polygon("fill",
+                            obstacle.x, spikeY,
+                            obstacle.x - 15, spikeY + 15,
+                            obstacle.x, spikeY + 30
+                        )
+                    end
+
+                    -- Add some texture to the wall
+                    lg.setColor(0.5, 0.2, 0.2, 0.3)
+                    for i = 1, 3 do
+                        for j = 1, 4 do
+                            local brickX = obstacle.x + (j - 1) * 8
+                            local brickY = obstacle.y + (i - 1) * 15
+                            lg.rectangle("line", brickX, brickY, 6, 12)
+                        end
+                    end
+        elseif obstacle.type == "teleport_gate" then
+            -- Draw teleporter with animated portal effect
+            local pulse = (math_sin(self.time * 8) + 1) * 0.3 + 0.4
+            lg.setColor(obstacle.color[1], obstacle.color[2], obstacle.color[3], pulse)
+            lg.rectangle("fill", obstacle.x, obstacle.y, obstacle.width, obstacle.height)
+
+            -- Outer frame
+            lg.setColor(1, 1, 1, 0.8)
+            lg.setLineWidth(3)
+            lg.rectangle("line", obstacle.x, obstacle.y, obstacle.width, obstacle.height)
+            lg.setLineWidth(1)
+
+            -- Animated inner portal with swirling effect
+            local innerPulse = (math_sin(self.time * 6) + 1) * 0.5
+            local swirl = self.time * 10
+
+            lg.push()
+            lg.translate(obstacle.x + obstacle.width / 2, obstacle.y + obstacle.height / 2)
+            lg.rotate(swirl)
+
+            lg.setColor(0.8, 0.6, 1, innerPulse)
+            for i = 1, 3 do
+                local size = (obstacle.width - 20 - (i - 1) * 8) / 2
+                lg.circle("line", 0, 0, size)
+            end
+
+            lg.setColor(0.9, 0.8, 1, innerPulse * 0.7)
+            lg.rectangle("fill", -15, -15, 30, 30)
+
+            lg.pop()
+
+            -- Sparkle particles around the teleporter
+            local sparkleTime = self.time * 12
+            for i = 1, 4 do
+                local angle = sparkleTime + (i - 1) * math.pi / 2
+                local sparkleX = obstacle.x + obstacle.width / 2 + math.cos(angle) * 25
+                local sparkleY = obstacle.y + obstacle.height / 2 + math.sin(angle) * 25
+                local sparkleSize = (math_sin(angle * 2) + 1) * 1.5 + 1
+
+                lg.setColor(1, 1, 1, 0.8)
+                lg.rectangle("fill", sparkleX - sparkleSize / 2, sparkleY - sparkleSize / 2,
+                    sparkleSize, sparkleSize)
+            end
         else
-            -- Regular obstacle
+            -- Default drawing for regular obstacles
             lg.rectangle("fill", obstacle.x, obstacle.y, obstacle.width, obstacle.height)
             lg.setColor(1, 1, 1, 0.3)
             lg.rectangle("line", obstacle.x, obstacle.y, obstacle.width, obstacle.height)
+
+            -- Add some visual interest to regular obstacles
+            lg.setColor(0.8, 0.8, 0.8, 0.2)
+            lg.rectangle("fill", obstacle.x + 5, obstacle.y + 5,
+                obstacle.width - 10, obstacle.height - 10)
         end
+
+        ::continue::
     end
 end
 
@@ -567,8 +758,8 @@ function Game.new()
         {
             name = "high_barrier",
             width = 40,
-            height = 60,
-            yOffset = -20,
+            height = 120,
+            yOffset = -35,
             requireCrouch = true,
             color = { 0.8, 0.5, 0.2 }
         },
@@ -599,6 +790,70 @@ function Game.new()
             moveDirection = 1,
             requireJump = true,
             color = { 0.7, 0.3, 0.7 }
+        },
+        {
+            name = "bouncing_ball",
+            width = 40,
+            height = 40,
+            yOffset = 0,
+            isMoving = true,
+            isBouncing = true,
+            moveRange = 150,
+            moveSpeed = 3,
+            bounceHeight = 100,
+            bounceSpeed = 5,
+            color = { 0.9, 0.4, 0.1 },
+            requireJump = true
+        },
+        {
+            name = "disappearing_platform",
+            width = 80,
+            height = 20,
+            yOffset = -50,
+            isDisappearing = true,
+            disappearTime = 1.0,
+            reappearTime = 1.5,
+            timer = 0,
+            active = true,
+            color = { 0.3, 0.7, 0.8 },
+            requireTiming = true
+        },
+        {
+            name = "laser_beam",
+            width = 10,
+            height = 200,
+            yOffset = -180,
+            isLaser = true,
+            isActive = true,
+            activeTime = 2.0,
+            inactiveTime = 1.5,
+            timer = 0,
+            warningTime = 0.5,
+            color = { 1, 0.2, 0.2 },
+            warningColor = { 1, 0.5, 0.5 },
+            requireCrouch = true
+        },
+        {
+            name = "moving_spikes_wall",
+            width = 30,
+            height = 200,
+            yOffset = -180,
+            isMoving = true,
+            moveRange = 300,
+            moveSpeed = 2,
+            hasSpikes = true,
+            color = { 0.8, 0.2, 0.3 },
+            requireJumpOrCrouch = true
+        },
+        {
+            name = "teleport_gate",
+            width = 60,
+            height = 120,
+            yOffset = -60,
+            isTeleporter = true,
+            pairId = 0, -- Will be set when spawned
+            color = { 0.6, 0.2, 0.8 },
+            teleportOffset = 200
         }
     }
 
