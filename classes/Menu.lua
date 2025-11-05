@@ -41,7 +41,7 @@ local function createMenuButtons(self)
             height = 50,
             x = 0,
             y = 0,
-            color = {0.2, 0.7, 0.3}
+            color = { 0.2, 0.7, 0.3 }
         },
         {
             text = "Quit Game",
@@ -50,7 +50,7 @@ local function createMenuButtons(self)
             height = 50,
             x = 0,
             y = 0,
-            color = {0.8, 0.3, 0.3}
+            color = { 0.8, 0.3, 0.3 }
         }
     }
 end
@@ -64,7 +64,7 @@ local function createGameOverButtons(self)
             height = 45,
             x = 0,
             y = 0,
-            color = {0.2, 0.7, 0.3}
+            color = { 0.2, 0.7, 0.3 }
         },
         {
             text = "Main Menu",
@@ -73,9 +73,23 @@ local function createGameOverButtons(self)
             height = 45,
             x = 0,
             y = 0,
-            color = {0.3, 0.5, 0.8}
+            color = { 0.3, 0.5, 0.8 }
         }
     }
+end
+
+local function updateButtonHover(self, x, y)
+    self.buttonHover = nil
+
+    local buttons = self.state == "gameover" and self.gameOverButtons or self.menuButtons
+
+    for _, button in ipairs(buttons) do
+        if x >= button.x and x <= button.x + button.width and
+            y >= button.y and y <= button.y + button.height then
+            self.buttonHover = button.action
+            return
+        end
+    end
 end
 
 local function drawButton(self, button, isHovered)
@@ -185,9 +199,10 @@ local function drawGameOverTitle(self, screenWidth, screenHeight)
     end
 end
 
-function Menu.new()
+function Menu.new(game)
     local instance = setmetatable({}, Menu)
 
+    instance.game = game
     instance.screenWidth = 800
     instance.screenHeight = 600
     instance.time = 0
@@ -216,21 +231,7 @@ function Menu:update(dt, screenWidth, screenHeight)
     end
 
     -- Update button hover state
-    self:updateButtonHover(love.mouse.getX(), love.mouse.getY())
-end
-
-function Menu:updateButtonHover(x, y)
-    self.buttonHover = nil
-
-    local buttons = self.state == "gameover" and self.gameOverButtons or self.menuButtons
-
-    for _, button in ipairs(buttons) do
-        if x >= button.x and x <= button.x + button.width and
-            y >= button.y and y <= button.y + button.height then
-            self.buttonHover = button.action
-            return
-        end
-    end
+    updateButtonHover(self, love.mouse.getX(), love.mouse.getY())
 end
 
 function Menu:draw(screenWidth, screenHeight, state)
@@ -249,11 +250,8 @@ function Menu:draw(screenWidth, screenHeight, state)
         lg.setFont(self.smallFont)
         lg.printf("Use SPACE/UP to jump and DOWN to crouch. Avoid obstacles and collect power-ups!",
             50, screenHeight - 100, screenWidth - 100, "center")
-
     elseif state == "gameover" then
         drawGameOverTitle(self, screenWidth, screenHeight)
-
-        -- Draw game over buttons
         for _, button in ipairs(self.gameOverButtons) do
             drawButton(self, button, self.buttonHover == button.action)
         end
@@ -262,8 +260,7 @@ function Menu:draw(screenWidth, screenHeight, state)
     -- Copyright
     lg.setColor(1, 1, 1, 0.6)
     lg.setFont(self.smallFont)
-    lg.printf("© 2025 Jericho Crosby – Infinite Runner",
-        10, screenHeight - 30, screenWidth - 20, "right")
+    lg.printf("© 2025 Jericho Crosby – Infinite Runner", 10, screenHeight - 30, screenWidth - 20, "right")
 end
 
 function Menu:handleClick(x, y, state)

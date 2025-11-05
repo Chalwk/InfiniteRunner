@@ -34,7 +34,7 @@ function love.load()
     lg.setLineStyle("smooth")
 
     game = Game.new()
-    menu = Menu.new()
+    menu = Menu.new(game)
     backgroundManager = BackgroundManager.new()
 
     updateScreenSize()

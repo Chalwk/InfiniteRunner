@@ -17,7 +17,7 @@ local lg = love.graphics
 local Game = {}
 Game.__index = Game
 
-function Game:isOverGap()
+local function isOverGap(self)
     local player = self.player
     for _, obstacle in ipairs(self.obstacles) do
         if obstacle.isGap then
@@ -29,6 +29,248 @@ function Game:isOverGap()
         end
     end
     return false
+end
+
+local function initGround(self)
+    self.groundSegments = {}
+    local segmentWidth = 100
+    local numSegments = math_floor(self.screenWidth / segmentWidth) + 2
+
+    for i = 1, numSegments do
+        table_insert(self.groundSegments, {
+            x = (i - 1) * segmentWidth,
+            y = self.player.groundY,
+            width = segmentWidth,
+            height = 20
+        })
+    end
+end
+
+local function spawnObstacle(self)
+    local obstacle = self.obstacleTypes[love_random(#self.obstacleTypes)]
+    local newObstacle = {
+        x = self.screenWidth,
+        y = self.player.groundY - obstacle.height + obstacle.yOffset,
+        width = obstacle.width,
+        height = obstacle.height,
+        type = obstacle.name,
+        color = obstacle.color,
+        passed = false
+    }
+
+    -- Copy additional properties
+    for k, v in pairs(obstacle) do
+        if k ~= "name" and k ~= "width" and k ~= "height" and k ~= "yOffset" and k ~= "color" then
+            newObstacle[k] = v
+        end
+    end
+
+    if newObstacle.isMoving then
+        newObstacle.originalY = newObstacle.y
+        newObstacle.moveTime = 0
+    end
+
+    table_insert(self.obstacles, newObstacle)
+end
+
+local function updatePowerUps(self, dt)
+    -- Check for expired power-ups
+    for powerType, effect in pairs(self.activePowerUps) do
+        if self.time >= effect.endTime then
+            self.activePowerUps[powerType] = nil
+        end
+    end
+
+    -- Apply power-up effects
+    if self.activePowerUps.speed then
+        self.gameSpeed = self.baseSpeed * self.activePowerUps.speed.multiplier
+    elseif self.activePowerUps.slow_mo then
+        self.gameSpeed = self.baseSpeed * self.activePowerUps.slow_mo.multiplier
+    else
+        -- Gradually increase speed
+        self.gameSpeed = math_min(self.baseSpeed + self.distance * self.speedIncreaseRate, self.maxSpeed)
+    end
+end
+
+local function spawnPowerUp(self)
+    local powerUp = self.powerUpTypes[love_random(#self.powerUpTypes)]
+
+    table_insert(self.powerUps, {
+        x = self.screenWidth,
+        y = self.player.groundY - 60,
+        width = powerUp.width,
+        height = powerUp.height,
+        type = powerUp.name,
+        color = powerUp.color,
+        duration = powerUp.duration,
+        effect = powerUp.effect,
+        collected = false,
+        bounce = 0
+    })
+end
+
+local function activatePowerUp(self, powerUp)
+    local effect = powerUp.effect(self.player)
+    effect.endTime = self.time + powerUp.duration
+    self.activePowerUps[effect.type] = effect
+
+    -- Visual feedback
+    self:createParticles(powerUp.x + powerUp.width / 2, powerUp.y + powerUp.height / 2, powerUp.color, 15)
+end
+
+local function updatePowerUpsList(self, dt)
+    local speed = self.gameSpeed * dt
+
+    -- Update power-ups
+    for i = #self.powerUps, 1, -1 do
+        local powerUp = self.powerUps[i]
+        powerUp.x = powerUp.x - speed
+        powerUp.bounce = powerUp.bounce + dt * 5
+
+        -- Check collection
+        if not powerUp.collected and self:rectIntersect(
+                self.player.x, self.player.y, self.player.width, self.player.height,
+                powerUp.x, powerUp.y, powerUp.width, powerUp.height) then
+            powerUp.collected = true
+            activatePowerUp(self, powerUp)
+            self.score = self.score + 50
+        end
+
+        -- Remove off-screen or collected power-ups
+        if powerUp.x + powerUp.width < 0 or powerUp.collected then
+            table_remove(self.powerUps, i)
+        end
+    end
+
+    -- Spawn new power-ups
+    self.powerUpSpawnTimer = self.powerUpSpawnTimer - dt
+    if self.powerUpSpawnTimer <= 0 then
+        if love_random() < 0.3 then spawnPowerUp(self) end
+        self.powerUpSpawnTimer = self.powerUpSpawnRate
+    end
+end
+
+local function updateObstacles(self, dt)
+    local speed = self.gameSpeed * dt
+
+    -- Update obstacles
+    for i = #self.obstacles, 1, -1 do
+        local obstacle = self.obstacles[i]
+        obstacle.x = obstacle.x - speed
+
+        -- Update moving obstacles
+        if obstacle.isMoving then
+            obstacle.moveTime = obstacle.moveTime + dt * obstacle.moveSpeed
+            obstacle.y = obstacle.originalY + math_sin(obstacle.moveTime) * obstacle.moveRange
+        end
+
+        -- Check if passed
+        if not obstacle.passed and obstacle.x + obstacle.width < self.player.x then
+            obstacle.passed = true
+            self.score = self.score + 10
+            if self.activePowerUps.double_points then
+                self.score = self.score + 10 -- Bonus points
+            end
+        end
+
+        -- Remove off-screen obstacles
+        if obstacle.x + obstacle.width < 0 then
+            table_remove(self.obstacles, i)
+        end
+    end
+
+    -- Spawn new obstacles
+    self.obstacleSpawnTimer = self.obstacleSpawnTimer - dt
+    if self.obstacleSpawnTimer <= 0 then
+        spawnObstacle(self)
+        self.obstacleSpawnTimer = math_max(self.obstacleSpawnRate, self.minObstacleSpawnRate)
+        self.obstacleSpawnRate = self.obstacleSpawnRate - self.spawnRateDecrease
+    end
+end
+
+local function checkCollisions(self)
+    if self.activePowerUps.invincible then return false end
+
+    local player = self.player
+    for _, obstacle in ipairs(self.obstacles) do
+        if self:rectIntersect(player.x, player.y, player.width, player.height,
+                obstacle.x, obstacle.y, obstacle.width, obstacle.height) then
+            return true
+        end
+    end
+
+    return false
+end
+
+local function updatePlayer(self, dt)
+    local player = self.player
+
+    -- Update running animation
+    player.animationTime = player.animationTime + dt
+    player.runCycle = (player.runCycle + dt * 10) % (2 * math.pi)
+
+    -- If player is over a gap and not already jumping, start falling
+    if not player.isJumping and isOverGap(self) then
+        player.isJumping = true
+        player.jumpVelocity = 0
+    end
+
+    -- Handle jumping or falling physics
+    if player.isJumping then
+        player.jumpVelocity = player.jumpVelocity + player.gravity * dt
+        player.y = player.y + player.jumpVelocity * dt
+
+        -- Check if landed or still falling through a gap
+        if player.y >= player.groundY - player.height then
+            if not isOverGap(self) then
+                -- Land on solid ground
+                player.y = player.groundY - player.height
+                player.isJumping = false
+                player.jumpVelocity = 0
+                self:createParticles(player.x + player.width / 2, player.y + player.height,
+                    { 0.9, 0.9, 0.9 }, 5)
+            else
+                -- Still over a gap: keep falling
+                player.isJumping = true
+            end
+        end
+    end
+
+    -- Check if player fell off the screen (death condition)
+    if player.y > self.screenHeight then
+        self.gameOver = true
+        if self.score > self.highScore then
+            self.highScore = self.score
+        end
+    end
+end
+
+local function updateGround(self, dt)
+    local speed = self.gameSpeed * dt
+
+    -- Update ground segments
+    for _, segment in ipairs(self.groundSegments) do
+        segment.x = segment.x - speed
+
+        -- Wrap ground segments
+        if segment.x + segment.width < 0 then
+            segment.x = segment.x + #self.groundSegments * segment.width
+        end
+    end
+end
+
+local function updateParticles(self, dt)
+    for i = #self.particles, 1, -1 do
+        local particle = self.particles[i]
+        particle.life = particle.life - dt
+        particle.x = particle.x + particle.dx * dt
+        particle.y = particle.y + particle.dy * dt
+        particle.dy = particle.dy + 400 * dt -- gravity
+
+        if particle.life <= 0 then
+            table_remove(self.particles, i)
+        end
+    end
 end
 
 function Game.new()
@@ -175,110 +417,9 @@ function Game.new()
     }
 
     -- Initialize ground
-    instance:initGround()
+    initGround(instance)
 
     return instance
-end
-
-function Game:initGround()
-    self.groundSegments = {}
-    local segmentWidth = 100
-    local numSegments = math_floor(self.screenWidth / segmentWidth) + 2
-
-    for i = 1, numSegments do
-        table_insert(self.groundSegments, {
-            x = (i - 1) * segmentWidth,
-            y = self.player.groundY,
-            width = segmentWidth,
-            height = 20
-        })
-    end
-end
-
-function Game:spawnObstacle()
-    local obstacle = self.obstacleTypes[love_random(#self.obstacleTypes)]
-    local newObstacle = {
-        x = self.screenWidth,
-        y = self.player.groundY - obstacle.height + obstacle.yOffset,
-        width = obstacle.width,
-        height = obstacle.height,
-        type = obstacle.name,
-        color = obstacle.color,
-        passed = false
-    }
-
-    -- Copy additional properties
-    for k, v in pairs(obstacle) do
-        if k ~= "name" and k ~= "width" and k ~= "height" and k ~= "yOffset" and k ~= "color" then
-            newObstacle[k] = v
-        end
-    end
-
-    if newObstacle.isMoving then
-        newObstacle.originalY = newObstacle.y
-        newObstacle.moveTime = 0
-    end
-
-    table_insert(self.obstacles, newObstacle)
-end
-
-function Game:spawnPowerUp()
-    local powerUp = self.powerUpTypes[love_random(#self.powerUpTypes)]
-
-    table_insert(self.powerUps, {
-        x = self.screenWidth,
-        y = self.player.groundY - 60,
-        width = powerUp.width,
-        height = powerUp.height,
-        type = powerUp.name,
-        color = powerUp.color,
-        duration = powerUp.duration,
-        effect = powerUp.effect,
-        collected = false,
-        bounce = 0
-    })
-end
-
-function Game:activatePowerUp(powerUp)
-    local effect = powerUp.effect(self.player)
-    effect.endTime = self.time + powerUp.duration
-    self.activePowerUps[effect.type] = effect
-
-    -- Visual feedback
-    self:createParticles(powerUp.x + powerUp.width / 2, powerUp.y + powerUp.height / 2, powerUp.color, 15)
-end
-
-function Game:updatePowerUps(dt)
-    -- Check for expired power-ups
-    for powerType, effect in pairs(self.activePowerUps) do
-        if self.time >= effect.endTime then
-            self.activePowerUps[powerType] = nil
-        end
-    end
-
-    -- Apply power-up effects
-    if self.activePowerUps.speed then
-        self.gameSpeed = self.baseSpeed * self.activePowerUps.speed.multiplier
-    elseif self.activePowerUps.slow_mo then
-        self.gameSpeed = self.baseSpeed * self.activePowerUps.slow_mo.multiplier
-    else
-        -- Gradually increase speed
-        self.gameSpeed = math_min(self.baseSpeed + self.distance * self.speedIncreaseRate, self.maxSpeed)
-    end
-end
-
-function Game:checkCollisions()
-    if self.activePowerUps.invincible then return false end
-
-    local player = self.player
-    for _, obstacle in ipairs(self.obstacles) do
-        if self:rectIntersect(player.x, player.y, player.width, player.height,
-                obstacle.x, obstacle.y, obstacle.width, obstacle.height) then
-            return true
-        end
-    end
-
-    return false
 end
 
 function Game:rectIntersect(x1, y1, w1, h1, x2, y2, w2, h2)
@@ -310,136 +451,6 @@ function Game:playerCrouch(crouching)
     end
 end
 
-function Game:updatePlayer(dt)
-    local player = self.player
-
-    -- Update running animation
-    player.animationTime = player.animationTime + dt
-    player.runCycle = (player.runCycle + dt * 10) % (2 * math.pi)
-
-    -- If player is over a gap and not already jumping, start falling
-    if not player.isJumping and self:isOverGap() then
-        player.isJumping = true
-        player.jumpVelocity = 0
-    end
-
-    -- Handle jumping or falling physics
-    if player.isJumping then
-        player.jumpVelocity = player.jumpVelocity + player.gravity * dt
-        player.y = player.y + player.jumpVelocity * dt
-
-        -- Check if landed or still falling through a gap
-        if player.y >= player.groundY - player.height then
-            if not self:isOverGap() then
-                -- Land on solid ground
-                player.y = player.groundY - player.height
-                player.isJumping = false
-                player.jumpVelocity = 0
-                self:createParticles(player.x + player.width / 2, player.y + player.height,
-                    { 0.9, 0.9, 0.9 }, 5)
-            else
-                -- Still over a gap: keep falling
-                player.isJumping = true
-            end
-        end
-    end
-
-    -- Check if player fell off the screen (death condition)
-    if player.y > self.screenHeight then
-        self.gameOver = true
-        if self.score > self.highScore then
-            self.highScore = self.score
-        end
-    end
-end
-
-
-function Game:updateObstacles(dt)
-    local speed = self.gameSpeed * dt
-
-    -- Update obstacles
-    for i = #self.obstacles, 1, -1 do
-        local obstacle = self.obstacles[i]
-        obstacle.x = obstacle.x - speed
-
-        -- Update moving obstacles
-        if obstacle.isMoving then
-            obstacle.moveTime = obstacle.moveTime + dt * obstacle.moveSpeed
-            obstacle.y = obstacle.originalY + math_sin(obstacle.moveTime) * obstacle.moveRange
-        end
-
-        -- Check if passed
-        if not obstacle.passed and obstacle.x + obstacle.width < self.player.x then
-            obstacle.passed = true
-            self.score = self.score + 10
-            if self.activePowerUps.double_points then
-                self.score = self.score + 10 -- Bonus points
-            end
-        end
-
-        -- Remove off-screen obstacles
-        if obstacle.x + obstacle.width < 0 then
-            table_remove(self.obstacles, i)
-        end
-    end
-
-    -- Spawn new obstacles
-    self.obstacleSpawnTimer = self.obstacleSpawnTimer - dt
-    if self.obstacleSpawnTimer <= 0 then
-        self:spawnObstacle()
-        self.obstacleSpawnTimer = math_max(self.obstacleSpawnRate, self.minObstacleSpawnRate)
-        self.obstacleSpawnRate = self.obstacleSpawnRate - self.spawnRateDecrease
-    end
-end
-
-function Game:updatePowerUpsList(dt)
-    local speed = self.gameSpeed * dt
-
-    -- Update power-ups
-    for i = #self.powerUps, 1, -1 do
-        local powerUp = self.powerUps[i]
-        powerUp.x = powerUp.x - speed
-        powerUp.bounce = powerUp.bounce + dt * 5
-
-        -- Check collection
-        if not powerUp.collected and self:rectIntersect(
-                self.player.x, self.player.y, self.player.width, self.player.height,
-                powerUp.x, powerUp.y, powerUp.width, powerUp.height) then
-            powerUp.collected = true
-            self:activatePowerUp(powerUp)
-            self.score = self.score + 50
-        end
-
-        -- Remove off-screen or collected power-ups
-        if powerUp.x + powerUp.width < 0 or powerUp.collected then
-            table_remove(self.powerUps, i)
-        end
-    end
-
-    -- Spawn new power-ups
-    self.powerUpSpawnTimer = self.powerUpSpawnTimer - dt
-    if self.powerUpSpawnTimer <= 0 then
-        if love_random() < 0.3 then -- 30% chance to spawn
-            self:spawnPowerUp()
-        end
-        self.powerUpSpawnTimer = self.powerUpSpawnRate
-    end
-end
-
-function Game:updateGround(dt)
-    local speed = self.gameSpeed * dt
-
-    -- Update ground segments
-    for _, segment in ipairs(self.groundSegments) do
-        segment.x = segment.x - speed
-
-        -- Wrap ground segments
-        if segment.x + segment.width < 0 then
-            segment.x = segment.x + #self.groundSegments * segment.width
-        end
-    end
-end
-
 function Game:createParticles(x, y, color, count)
     for _ = 1, count do
         table_insert(self.particles, {
@@ -452,20 +463,6 @@ function Game:createParticles(x, y, color, count)
             size = love_random(2, 6),
             rotation = love_random() * 6.28
         })
-    end
-end
-
-function Game:updateParticles(dt)
-    for i = #self.particles, 1, -1 do
-        local particle = self.particles[i]
-        particle.life = particle.life - dt
-        particle.x = particle.x + particle.dx * dt
-        particle.y = particle.y + particle.dy * dt
-        particle.dy = particle.dy + 400 * dt -- gravity
-
-        if particle.life <= 0 then
-            table_remove(self.particles, i)
-        end
     end
 end
 
@@ -676,52 +673,25 @@ function Game:drawParticles()
     end
 end
 
-function Game:drawGameOver()
-    -- Dark overlay
-    lg.setColor(0, 0, 0, 0.7)
-    lg.rectangle("fill", 0, 0, self.screenWidth, self.screenHeight)
-
-    -- Game over text
-    lg.setColor(0.9, 0.2, 0.2)
-    lg.setFont(lg.newFont(48))
-    lg.printf("GAME OVER", 0, self.screenHeight / 2 - 100, self.screenWidth, "center")
-
-    -- Score summary
-    lg.setColor(1, 1, 1)
-    lg.setFont(lg.newFont(32))
-    lg.printf("Final Score: " .. math_floor(self.score), 0, self.screenHeight / 2 - 20, self.screenWidth, "center")
-    lg.printf("Distance: " .. math_floor(self.distance) .. "m", 0, self.screenHeight / 2 + 20, self.screenWidth, "center")
-
-    if self.score > self.highScore then
-        lg.setColor(1, 0.8, 0.2)
-        lg.printf("NEW HIGH SCORE!", 0, self.screenHeight / 2 + 60, self.screenWidth, "center")
-    end
-
-    -- Instructions
-    lg.setColor(1, 1, 1, 0.8)
-    lg.setFont(lg.newFont(20))
-    lg.printf("Click to continue", 0, self.screenHeight / 2 + 120, self.screenWidth, "center")
-end
-
 function Game:update(dt)
     self.time = self.time + dt
 
-    if not self.gameOver then
+    if not self:isGameOver() then
         -- Update distance (based on speed)
         self.distance = self.distance + self.gameSpeed * dt * 0.01
 
         -- Update score based on distance
         self.score = self.score + self.gameSpeed * dt * 0.1
 
-        self:updatePlayer(dt)
-        self:updateObstacles(dt)
-        self:updatePowerUpsList(dt)
-        self:updatePowerUps(dt)
-        self:updateGround(dt)
-        self:updateParticles(dt)
+        updatePlayer(self, dt)
+        updateObstacles(self, dt)
+        updatePowerUpsList(self, dt)
+        updatePowerUps(self, dt)
+        updateGround(self, dt)
+        updateParticles(self, dt)
 
         -- Check for collisions
-        if self:checkCollisions() then
+        if checkCollisions(self) then
             self.gameOver = true
             if self.score > self.highScore then
                 self.highScore = self.score
@@ -737,8 +707,6 @@ function Game:draw()
     self:drawPlayer()
     self:drawParticles()
     self:drawUI()
-
-    if self.gameOver then self:drawGameOver() end
 end
 
 function Game:startNewGame()
@@ -769,7 +737,7 @@ function Game:setScreenSize(width, height)
     self.screenHeight = height
     self.player.groundY = height - 100
     self.player.y = self.player.groundY - self.player.height
-    self:initGround()
+    initGround(self)
 end
 
 function Game:isGameOver() return self.gameOver end
