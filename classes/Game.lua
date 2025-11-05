@@ -753,7 +753,7 @@ local function updateScreenSize(self)
         self.screenHeight = newHeight
 
         -- Update player boundaries and ground position
-        self.player.maxX = self.screenWidth - 100
+        self.player.maxX = self.screenWidth - 50
         self.player.minX = 50
         self.player.groundY = self.screenHeight - 100
         self.player.y = self.player.groundY - self.player.height
@@ -885,7 +885,7 @@ function Game.new(screenWidth, screenHeight)
             name = "disappearing_platform",
             width = 80,
             height = 20,
-            yOffset = -50,
+            yOffset = -15,
             isDisappearing = true,
             disappearTime = 1.0,
             reappearTime = 1.5,
@@ -1073,6 +1073,8 @@ function Game:setScreenSize(width, height)
     self.screenHeight = height
     self.player.groundY = height - 100
     self.player.y = self.player.groundY - self.player.height
+    self.player.maxX = width - 50
+    self.player.minX = 50
     initGround(self)
 end
 
