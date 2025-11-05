@@ -489,9 +489,6 @@ local function drawUI(self)
         elseif powerType == "invincible" then
             color = { 1, 1, 0.2 }
             text = "Invincible: " .. math_floor(timeLeft) .. "s"
-        elseif powerType == "magnet" then
-            color = { 0.8, 0.3, 0.8 }
-            text = "Magnet: " .. math_floor(timeLeft) .. "s"
         elseif powerType == "double_points" then
             color = { 0.2, 0.7, 1 }
             text = "2× Points: " .. math_floor(timeLeft) .. "s"
@@ -710,10 +707,6 @@ local function drawPowerUps(self)
             lg.circle("fill", 0, 0, 8)
             lg.setColor(1, 1, 1)
             lg.print("🛡", -4, -8)
-        elseif powerUp.type == "magnet" then
-            lg.rectangle("fill", -8, -4, 16, 8)
-            lg.setColor(1, 1, 1)
-            lg.print("🧲", -4, -8)
         elseif powerUp.type == "double_points" then
             lg.polygon("fill", 0, -8, -8, 8, 8, 8)
             lg.setColor(1, 1, 1)
@@ -770,13 +763,13 @@ function Game.new(screenWidth, screenHeight)
     instance.screenHeight = screenHeight
     instance.gameOver = false
     instance.score = 0
+    instance.time = 0
     instance.highScore = 0
     instance.distance = 0
     instance.gameSpeed = 200
     instance.baseSpeed = 200
     instance.maxSpeed = 600
     instance.speedIncreaseRate = 0.1
-    instance.time = 0
 
     -- Player properties
     instance.player = {
@@ -949,14 +942,6 @@ function Game.new(screenWidth, screenHeight)
             color = { 1, 1, 0.2 },
             duration = 3,
             effect = function(player) return { type = "invincible" } end
-        },
-        {
-            name = "magnet",
-            width = 25,
-            height = 25,
-            color = { 0.8, 0.3, 0.8 },
-            duration = 6,
-            effect = function(player) return { type = "magnet" } end
         },
         {
             name = "double_points",
