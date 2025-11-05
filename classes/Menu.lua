@@ -252,8 +252,7 @@ function Menu:draw(screenWidth, screenHeight, state)
         -- Instructions
         lg.setColor(1, 1, 1, 0.7)
         lg.setFont(self.smallFont)
-        lg.printf("Use SPACE/UP to jump and DOWN to crouch. Avoid obstacles and collect power-ups!",
-            50, screenHeight - 100, screenWidth - 100, "center")
+        lg.print("CONTROLS: WASD/Arrows: Move | SPACE: Jump | DOWN: Crouch | ESC: Menu", 20, self.screenHeight - 30)
     elseif state == "gameover" then
         drawGameOver(self, screenWidth, screenHeight)
     end

@@ -33,7 +33,9 @@ function love.load()
     lg.setDefaultFilter("nearest", "nearest")
     lg.setLineStyle("smooth")
 
-    game = Game.new()
+    updateScreenSize()
+
+    game = Game.new(screenWidth, screenHeight)
     menu = Menu.new(game)
     backgroundManager = BackgroundManager.new()
 
@@ -139,10 +141,18 @@ function love.keypressed(key)
         love.window.setFullscreen(not fullscreen)
     elseif currentState == "playing" then
         if not game:isGameOver() then
+            -- Jump/Up controls
             if key == "space" or key == "up" or key == "w" then
                 game:playerJump()
+                -- Crouch/Down controls
             elseif key == "down" or key == "s" then
                 game:playerCrouch(true)
+                -- Left movement
+            elseif key == "left" or key == "a" then
+                game:playerMoveLeft(true)
+                -- Right movement
+            elseif key == "right" or key == "d" then
+                game:playerMoveRight(true)
             end
         end
     end
@@ -152,8 +162,15 @@ function love.keyreleased(key)
     local currentState = stateTransition.active and stateTransition.targetState or gameState
 
     if currentState == "playing" then
+        -- Stop crouching
         if key == "down" or key == "s" then
             game:playerCrouch(false)
+            -- Stop left movement
+        elseif key == "left" or key == "a" then
+            game:playerMoveLeft(false)
+            -- Stop right movement
+        elseif key == "right" or key == "d" then
+            game:playerMoveRight(false)
         end
     end
 end

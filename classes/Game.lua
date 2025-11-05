@@ -273,7 +273,7 @@ local function teleportPlayer(self, teleporter)
 
     -- Add a brief invincibility period after teleporting
     self.activePowerUps.teleport_invincible = {
-        endTime = self.time + 1.0, -- 1 second of invincibility
+        endTime = self.time + 1.5, -- 1.5 seconds of invincibility
         type = "teleport_invincible"
     }
 
@@ -314,6 +314,13 @@ end
 
 local function updatePlayer(self, dt)
     local player = self.player
+
+    -- Handle horizontal movement
+    if player.moveLeft then
+        player.x = math_max(player.minX, player.x - player.moveSpeed * dt)
+    elseif player.moveRight then
+        player.x = math_min(player.maxX, player.x + player.moveSpeed * dt)
+    end
 
     -- Update running animation
     player.animationTime = player.animationTime + dt
@@ -377,16 +384,14 @@ local function updateParticles(self, dt)
         particle.y = particle.y + particle.dy * dt
         particle.dy = particle.dy + 400 * dt -- gravity
 
-        if particle.life <= 0 then
-            table_remove(self.particles, i)
-        end
+        if particle.life <= 0 then table_remove(self.particles, i) end
     end
 end
 
 local function drawPlayer(self)
     local player = self.player
     local centerX = player.x + player.width / 2
-    local centerY = player.y + player.height / 2
+    local centerY = player.y + player.height / 2 + 5
 
     lg.push()
     lg.translate(centerX, centerY)
@@ -738,11 +743,31 @@ local function drawGround(self)
     end
 end
 
-function Game.new()
+local function updateScreenSize(self)
+    local newWidth = lg.getWidth()
+    local newHeight = lg.getHeight()
+
+    -- Only update if dimensions actually changed
+    if newWidth ~= self.screenWidth or newHeight ~= self.screenHeight then
+        self.screenWidth = newWidth
+        self.screenHeight = newHeight
+
+        -- Update player boundaries and ground position
+        self.player.maxX = self.screenWidth - 100
+        self.player.minX = 50
+        self.player.groundY = self.screenHeight - 100
+        self.player.y = self.player.groundY - self.player.height
+
+        -- Reinitialize ground segments for new width
+        initGround(self)
+    end
+end
+
+function Game.new(screenWidth, screenHeight)
     local instance = setmetatable({}, Game)
 
-    instance.screenWidth = 800
-    instance.screenHeight = 600
+    instance.screenWidth = screenWidth
+    instance.screenHeight = screenHeight
     instance.gameOver = false
     instance.score = 0
     instance.highScore = 0
@@ -759,16 +784,20 @@ function Game.new()
         y = 0,
         width = 30,
         height = 60,
-        groundY = 400,
-        jumpVelocity = 0,
-        jumpPower = -600,
+        groundY = instance.screenHeight - 100,
         gravity = 1600,
         isJumping = false,
         isCrouching = false,
         normalHeight = 60,
         crouchHeight = 30,
         animationTime = 0,
-        runCycle = 0
+        runCycle = 0,
+        -- Movement properties
+        jumpVelocity = 0,
+        jumpPower = -600,
+        moveSpeed = 300,
+        moveLeft = false,
+        moveRight = false
     }
 
     instance.player.y = instance.player.groundY - instance.player.height
@@ -974,6 +1003,7 @@ function Game:playerCrouch(crouching)
 end
 
 function Game:update(dt)
+    updateScreenSize(self)
     self.time = self.time + dt
 
     if not self:isGameOver() then
@@ -1019,11 +1049,15 @@ function Game:startNewGame()
     self.powerUpSpawnTimer = self.powerUpSpawnRate
 
     -- Reset player
+    self.player.x = self.screenWidth * 0.1
     self.player.y = self.player.groundY - self.player.height
     self.player.isJumping = false
     self.player.isCrouching = false
     self.player.jumpVelocity = 0
     self.player.height = self.player.normalHeight
+
+    self.player.moveLeft = false
+    self.player.moveRight = false
 
     -- Clear game objects
     self.obstacles = {}
@@ -1038,6 +1072,22 @@ function Game:setScreenSize(width, height)
     self.player.groundY = height - 100
     self.player.y = self.player.groundY - self.player.height
     initGround(self)
+end
+
+function Game:playerMoveLeft(moving)
+    self.player.moveLeft = moving
+end
+
+function Game:playerMoveRight(moving)
+    self.player.moveRight = moving
+end
+
+function Game:playerMoveUp()
+    self:playerJump()
+end
+
+function Game:playerMoveDown(moving)
+    self:playerCrouch(moving)
 end
 
 function Game:isGameOver() return self.gameOver end
