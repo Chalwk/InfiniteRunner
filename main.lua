@@ -86,10 +86,12 @@ function love.draw()
     end
 
     -- Draw game content
-    if gameState == "menu" or gameState == "gameover" then
-        menu:draw(screenWidth, screenHeight, gameState)
+    if gameState == "menu" then
+        menu:draw(screenWidth, screenHeight, "menu")
     elseif gameState == "playing" then
         game:draw()
+    elseif gameState == "gameover" then
+        menu:draw(screenWidth, screenHeight, "gameover")
     end
 
     -- Draw transition overlay
