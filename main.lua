@@ -65,9 +65,7 @@ function love.update(dt)
         menu:update(dt, screenWidth, screenHeight)
     elseif gameState == "playing" then
         game:update(dt)
-        if game:isGameOver() then
-            startStateTransition("gameover")
-        end
+        if game:isGameOver() then gameState = "gameover" end
     elseif gameState == "gameover" then
         menu:update(dt, screenWidth, screenHeight)
     end
