@@ -252,15 +252,54 @@ local function updateObstacles(self, dt)
     end
 end
 
+local function teleportPlayer(self, teleporter)
+    -- Find a target teleporter (could be another one on screen or create one ahead)
+    local targetX = teleporter.x + 400 -- Teleport 400 pixels forward
+    local targetY = self.player.groundY - self.player.height
+
+    -- Create teleport effects at current position
+    createParticles(self, self.player.x + self.player.width / 2,
+        self.player.y + self.player.height / 2,
+        { 0.8, 0.6, 1 }, 20)
+
+    -- Actually move the player
+    self.player.x = targetX
+    self.player.y = targetY
+
+    -- Create teleport effects at new position
+    createParticles(self, self.player.x + self.player.width / 2,
+        self.player.y + self.player.height / 2,
+        { 0.8, 0.6, 1 }, 20)
+
+    -- Add a brief invincibility period after teleporting
+    self.activePowerUps.teleport_invincible = {
+        endTime = self.time + 1.0, -- 1 second of invincibility
+        type = "teleport_invincible"
+    }
+
+    -- Add score bonus for using teleporter
+    self.score = self.score + 25
+end
+
 local function checkCollisions(self)
     if self.activePowerUps.invincible then return false end
 
     local player = self.player
     for _, obstacle in ipairs(self.obstacles) do
+        -- Skip collision for inactive disappearing platforms
         if obstacle.isDisappearing and not obstacle.active then goto continue end
 
         -- Skip collision for inactive lasers
         if obstacle.isLaser and not obstacle.isActive then goto continue end
+
+        -- Handle teleport gate collision (special case - doesn't kill player)
+        if obstacle.type == "teleport_gate" then
+            if rectIntersect(player.x, player.y, player.width, player.height,
+                    obstacle.x, obstacle.y, obstacle.width, obstacle.height) then
+                teleportPlayer(self, obstacle)
+                goto continue -- Don't treat this as a deadly collision
+            end
+        end
 
         if rectIntersect(player.x, player.y, player.width, player.height,
                 obstacle.x, obstacle.y, obstacle.width, obstacle.height) then
@@ -354,9 +393,12 @@ local function drawPlayer(self)
 
     -- Body color based on power-ups
     local bodyColor = { 0.9, 0.9, 0.9 }
-    if self.activePowerUps.invincible then
+    if self.activePowerUps.invincible or self.activePowerUps.teleport_invincible then
         local pulse = (math_sin(self.time * 10) + 1) * 0.5
         bodyColor = { 1, 1, pulse }
+        if self.activePowerUps.teleport_invincible then
+            bodyColor = { 0.8, 0.6, pulse }
+        end
     elseif self.activePowerUps.speed then
         bodyColor = { 0.2, 0.9, 0.2 }
     elseif self.activePowerUps.double_points then
@@ -451,6 +493,9 @@ local function drawUI(self)
         elseif powerType == "slow_mo" then
             color = { 0.5, 0.5, 1 }
             text = "Slow Mo: " .. math_floor(timeLeft) .. "s"
+        elseif powerType == "teleport_invincible" then
+            color = { 0.8, 0.6, 1 }
+            text = "Teleport Shield: " .. math_floor(timeLeft) .. "s"
         end
 
         lg.setColor(color)
@@ -551,31 +596,31 @@ local function drawObstacles(self)
                     lg.rectangle("fill", obstacle.x, stripeY, obstacle.width, obstacle.height / 8)
                 end
             end
-                elseif obstacle.type == "moving_spikes_wall" then
-                    -- Draw the main wall
-                    lg.setColor(obstacle.color)
-                    lg.rectangle("fill", obstacle.x, obstacle.y, obstacle.width, obstacle.height)
+        elseif obstacle.type == "moving_spikes_wall" then
+            -- Draw the main wall
+            lg.setColor(obstacle.color)
+            lg.rectangle("fill", obstacle.x, obstacle.y, obstacle.width, obstacle.height)
 
-                    -- Draw spikes on the left side of the wall (previously on the right)
-                    lg.setColor(0.3, 0.1, 0.1)
-                    for i = 1, 6 do
-                        local spikeY = obstacle.y + (i - 1) * 35
-                        lg.polygon("fill",
-                            obstacle.x, spikeY,
-                            obstacle.x - 15, spikeY + 15,
-                            obstacle.x, spikeY + 30
-                        )
-                    end
+            -- Draw spikes on the left side of the wall (previously on the right)
+            lg.setColor(0.3, 0.1, 0.1)
+            for i = 1, 6 do
+                local spikeY = obstacle.y + (i - 1) * 35
+                lg.polygon("fill",
+                    obstacle.x, spikeY,
+                    obstacle.x - 15, spikeY + 15,
+                    obstacle.x, spikeY + 30
+                )
+            end
 
-                    -- Add some texture to the wall
-                    lg.setColor(0.5, 0.2, 0.2, 0.3)
-                    for i = 1, 3 do
-                        for j = 1, 4 do
-                            local brickX = obstacle.x + (j - 1) * 8
-                            local brickY = obstacle.y + (i - 1) * 15
-                            lg.rectangle("line", brickX, brickY, 6, 12)
-                        end
-                    end
+            -- Add some texture to the wall
+            lg.setColor(0.5, 0.2, 0.2, 0.3)
+            for i = 1, 3 do
+                for j = 1, 4 do
+                    local brickX = obstacle.x + (j - 1) * 8
+                    local brickY = obstacle.y + (i - 1) * 15
+                    lg.rectangle("line", brickX, brickY, 6, 12)
+                end
+            end
         elseif obstacle.type == "teleport_gate" then
             -- Draw teleporter with animated portal effect
             local pulse = (math_sin(self.time * 8) + 1) * 0.3 + 0.4
