@@ -5,7 +5,9 @@
 local pairs = pairs
 local ipairs = ipairs
 local math_floor = math.floor
+local math_pi = math.pi
 local math_sin = math.sin
+local math_cos = math.cos
 local math_min = math.min
 local math_max = math.max
 local table_insert = table.insert
@@ -228,6 +230,42 @@ local function updateObstacles(self, dt)
             end
         end
 
+        -- Handle pendulum obstacle
+        if obstacle.isPendulum then
+            -- Initialize pendulum properties if not set
+            if obstacle.pivotX == 0 then
+                -- Set pivot point to be on screen, not off-screen
+                obstacle.pivotX = obstacle.x + obstacle.width / 2
+                obstacle.pivotY = obstacle.y - obstacle.chainLength
+                obstacle.angle = math_pi / 4
+                obstacle.angularVelocity = 0
+                obstacle.bobX = obstacle.pivotX + obstacle.chainLength * math_sin(obstacle.angle)
+                obstacle.bobY = obstacle.pivotY + obstacle.chainLength * math_cos(obstacle.angle)
+
+                -- Update the obstacle position to match the bob position
+                obstacle.x = obstacle.bobX - obstacle.bobRadius
+                obstacle.y = obstacle.bobY - obstacle.bobRadius
+            end
+
+            -- Pendulum physics
+            local gravity = 800
+            obstacle.angularAcceleration = -(gravity / obstacle.chainLength) * math_sin(obstacle.angle)
+            obstacle.angularVelocity = obstacle.angularVelocity +
+                obstacle.angularAcceleration * dt * obstacle.swingSpeed
+            obstacle.angle = obstacle.angle + obstacle.angularVelocity * dt
+
+            -- Add some damping to prevent infinite swinging
+            obstacle.angularVelocity = obstacle.angularVelocity * (1 - 0.02 * dt)
+
+            -- Calculate bob position
+            obstacle.bobX = obstacle.pivotX + obstacle.chainLength * math_sin(obstacle.angle)
+            obstacle.bobY = obstacle.pivotY + obstacle.chainLength * math_cos(obstacle.angle)
+
+            -- Update collision box position to match the bob
+            obstacle.x = obstacle.bobX - obstacle.bobRadius
+            obstacle.y = obstacle.bobY - obstacle.bobRadius
+        end
+
         -- Check if passed
         if not obstacle.passed and obstacle.x + obstacle.width < self.player.x then
             obstacle.passed = true
@@ -238,7 +276,15 @@ local function updateObstacles(self, dt)
         end
 
         -- Remove off-screen obstacles
-        if obstacle.x + obstacle.width < 0 then
+        local shouldRemove = false
+        if obstacle.isPendulum then
+            -- For pendulums, remove when the pivot goes off-screen
+            shouldRemove = (obstacle.pivotX or obstacle.x) + (obstacle.width or 0) < 0
+        else
+            shouldRemove = obstacle.x + obstacle.width < 0
+        end
+
+        if shouldRemove then
             table_remove(self.obstacles, i)
         end
     end
@@ -324,7 +370,7 @@ local function updatePlayer(self, dt)
 
     -- Update running animation
     player.animationTime = player.animationTime + dt
-    player.runCycle = (player.runCycle + dt * 10) % (2 * math.pi)
+    player.runCycle = (player.runCycle + dt * 10) % (2 * math_pi)
 
     -- If player is over a gap and not already jumping, start falling
     if not player.isJumping and isOverGap(self) then
@@ -432,7 +478,7 @@ local function drawPlayer(self)
     else
         -- Running pose
         local legOffset = math_sin(player.runCycle) * 8
-        local armOffset = math_sin(player.runCycle + math.pi) * 6
+        local armOffset = math_sin(player.runCycle + math_pi) * 6
 
         lg.circle("line", 0, -10, 8)       -- Head
         lg.line(0, -2, 0, 10)              -- Body
@@ -514,9 +560,7 @@ end
 local function drawObstacles(self)
     for _, obstacle in ipairs(self.obstacles) do
         -- Skip drawing inactive disappearing platforms
-        if obstacle.isDisappearing and not obstacle.active then
-            goto continue
-        end
+        if obstacle.isDisappearing and not obstacle.active then goto continue end
 
         lg.setColor(obstacle.color)
 
@@ -585,7 +629,7 @@ local function drawObstacles(self)
                 lg.rectangle("fill", obstacle.x + 2, obstacle.y, obstacle.width - 4, obstacle.height)
             else
                 -- Inactive/warning state with pulsing effect
-                local warningProgress = (obstacle.timer / obstacle.inactiveTime) * math.pi * 2
+                local warningProgress = (obstacle.timer / obstacle.inactiveTime) * math_pi * 2
                 local pulse = (math_sin(warningProgress * 5) + 1) * 0.5
                 lg.setColor(obstacle.warningColor[1], obstacle.warningColor[2],
                     obstacle.warningColor[3], pulse)
@@ -657,14 +701,41 @@ local function drawObstacles(self)
             -- Sparkle particles around the teleporter
             local sparkleTime = self.time * 12
             for i = 1, 4 do
-                local angle = sparkleTime + (i - 1) * math.pi / 2
-                local sparkleX = obstacle.x + obstacle.width / 2 + math.cos(angle) * 25
-                local sparkleY = obstacle.y + obstacle.height / 2 + math.sin(angle) * 25
+                local angle = sparkleTime + (i - 1) * math_pi / 2
+                local sparkleX = obstacle.x + obstacle.width / 2 + math_cos(angle) * 25
+                local sparkleY = obstacle.y + obstacle.height / 2 + math_sin(angle) * 25
                 local sparkleSize = (math_sin(angle * 2) + 1) * 1.5 + 1
 
                 lg.setColor(1, 1, 1, 0.8)
                 lg.rectangle("fill", sparkleX - sparkleSize / 2, sparkleY - sparkleSize / 2,
                     sparkleSize, sparkleSize)
+            end
+        elseif obstacle.type == "pendulum" then
+            -- Safety check - only draw if bob positions are set
+            if obstacle.bobX and obstacle.bobY and obstacle.pivotX and obstacle.pivotY then
+                -- Draw the chain
+                lg.setColor(0.4, 0.4, 0.4)
+                lg.setLineWidth(3)
+                lg.line(obstacle.pivotX, obstacle.pivotY, obstacle.bobX, obstacle.bobY)
+                lg.setLineWidth(1)
+
+                -- Draw the pivot point
+                lg.setColor(0.3, 0.3, 0.3)
+                lg.circle("fill", obstacle.pivotX, obstacle.pivotY, 5)
+
+                -- Draw the pendulum bob
+                lg.setColor(obstacle.color)
+                lg.circle("fill", obstacle.bobX, obstacle.bobY, obstacle.bobRadius)
+
+                -- Add metallic highlights to the bob
+                lg.setColor(0.9, 0.9, 0.9, 0.6)
+                lg.circle("fill", obstacle.bobX - obstacle.bobRadius * 0.3,
+                    obstacle.bobY - obstacle.bobRadius * 0.3,
+                    obstacle.bobRadius * 0.4)
+
+                -- Bob outline
+                lg.setColor(0.3, 0.3, 0.3)
+                lg.circle("line", obstacle.bobX, obstacle.bobY, obstacle.bobRadius)
             end
         else
             -- Default drawing for regular obstacles
@@ -923,6 +994,26 @@ function Game.new(screenWidth, screenHeight)
             pairId = 0, -- Will be set when spawned
             color = { 0.6, 0.2, 0.8 },
             teleportOffset = 200
+        },
+        {
+            name = "pendulum",
+            width = 20,
+            height = 150,
+            yOffset = -130,
+            isPendulum = true,
+            pivotX = 0,
+            pivotY = 0,
+            chainLength = 120,
+            bobRadius = 15,
+            angle = math_pi / 4,
+            angularVelocity = 0,
+            angularAcceleration = 0,
+            maxAngle = math_pi / 3,
+            swingSpeed = 3,
+            bobX = 0,
+            bobY = 0,
+            color = { 0.7, 0.5, 0.2 },
+            requireTiming = true
         }
     }
 
