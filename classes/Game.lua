@@ -792,6 +792,8 @@ function Game.new(screenWidth, screenHeight)
         crouchHeight = 30,
         animationTime = 0,
         runCycle = 0,
+        maxX = screenWidth - 100,
+        minX = 50,
         -- Movement properties
         jumpVelocity = 0,
         jumpPower = -600,

@@ -36,7 +36,7 @@ function love.load()
     updateScreenSize()
 
     game = Game.new(screenWidth, screenHeight)
-    menu = Menu.new(game)
+    menu = Menu.new(game, screenWidth, screenHeight)
     backgroundManager = BackgroundManager.new()
 
     updateScreenSize()

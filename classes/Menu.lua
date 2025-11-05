@@ -203,12 +203,12 @@ local function drawGameOver(self, screenWidth, screenHeight)
     end
 end
 
-function Menu.new(game)
+function Menu.new(game, screenWidth, screenHeight)
     local instance = setmetatable({}, Menu)
 
     instance.game = game
-    instance.screenWidth = 800
-    instance.screenHeight = 600
+    instance.screenWidth = screenWidth
+    instance.screenHeight = screenHeight
     instance.time = 0
     instance.buttonHover = nil
     instance.finalScore = 0
