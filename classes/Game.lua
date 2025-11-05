@@ -180,6 +180,8 @@ local function updateObstacles(self, dt)
     -- Update obstacles
     for i = #self.obstacles, 1, -1 do
         local obstacle = self.obstacles[i]
+
+        -- Move ALL obstacles horizontally, including pendulums
         obstacle.x = obstacle.x - speed
 
         -- Update moving obstacles
@@ -233,12 +235,14 @@ local function updateObstacles(self, dt)
         -- Handle pendulum obstacle
         if obstacle.isPendulum then
             -- Initialize pendulum properties if not set
-            if obstacle.pivotX == 0 then
-                -- Set pivot point to be on screen, not off-screen
-                obstacle.pivotX = obstacle.x + obstacle.width / 2
-                obstacle.pivotY = obstacle.y - obstacle.chainLength
+            if obstacle.pivotX == nil then
+                obstacle.pivotX = obstacle.x + 50
+                obstacle.pivotY = self.player.groundY - obstacle.chainLength - 45
                 obstacle.angle = math_pi / 4
                 obstacle.angularVelocity = 0
+                obstacle.bobRadius = obstacle.width / 2
+
+                -- Calculate initial bob position
                 obstacle.bobX = obstacle.pivotX + obstacle.chainLength * math_sin(obstacle.angle)
                 obstacle.bobY = obstacle.pivotY + obstacle.chainLength * math_cos(obstacle.angle)
 
@@ -249,6 +253,8 @@ local function updateObstacles(self, dt)
 
             -- Pendulum physics
             local gravity = 800
+            obstacle.pivotX = obstacle.pivotX - speed
+
             obstacle.angularAcceleration = -(gravity / obstacle.chainLength) * math_sin(obstacle.angle)
             obstacle.angularVelocity = obstacle.angularVelocity +
                 obstacle.angularAcceleration * dt * obstacle.swingSpeed
@@ -257,7 +263,7 @@ local function updateObstacles(self, dt)
             -- Add some damping to prevent infinite swinging
             obstacle.angularVelocity = obstacle.angularVelocity * (1 - 0.02 * dt)
 
-            -- Calculate bob position
+            -- Calculate bob position relative to moving pivot
             obstacle.bobX = obstacle.pivotX + obstacle.chainLength * math_sin(obstacle.angle)
             obstacle.bobY = obstacle.pivotY + obstacle.chainLength * math_cos(obstacle.angle)
 
@@ -723,19 +729,23 @@ local function drawObstacles(self)
                 lg.setColor(0.3, 0.3, 0.3)
                 lg.circle("fill", obstacle.pivotX, obstacle.pivotY, 5)
 
-                -- Draw the pendulum bob
+                -- Draw the pendulum bob (this is the actual obstacle)
                 lg.setColor(obstacle.color)
-                lg.circle("fill", obstacle.bobX, obstacle.bobY, obstacle.bobRadius)
+                lg.circle("fill", obstacle.bobX, obstacle.bobY, obstacle.bobRadius or (obstacle.width / 2))
 
                 -- Add metallic highlights to the bob
                 lg.setColor(0.9, 0.9, 0.9, 0.6)
-                lg.circle("fill", obstacle.bobX - obstacle.bobRadius * 0.3,
-                    obstacle.bobY - obstacle.bobRadius * 0.3,
-                    obstacle.bobRadius * 0.4)
+                lg.circle("fill", obstacle.bobX - (obstacle.bobRadius or 10) * 0.3,
+                    obstacle.bobY - (obstacle.bobRadius or 10) * 0.3,
+                    (obstacle.bobRadius or 10) * 0.4)
 
                 -- Bob outline
                 lg.setColor(0.3, 0.3, 0.3)
-                lg.circle("line", obstacle.bobX, obstacle.bobY, obstacle.bobRadius)
+                lg.circle("line", obstacle.bobX, obstacle.bobY, obstacle.bobRadius or (obstacle.width / 2))
+            else
+                -- Fallback: draw as a regular obstacle if pendulum isn't properly initialized
+                lg.setColor(obstacle.color)
+                lg.rectangle("fill", obstacle.x, obstacle.y, obstacle.width, obstacle.height)
             end
         else
             -- Default drawing for regular obstacles
@@ -997,21 +1007,18 @@ function Game.new(screenWidth, screenHeight)
         },
         {
             name = "pendulum",
-            width = 20,
-            height = 150,
-            yOffset = -130,
+            width = 40,
+            height = 40,
+            yOffset = -30,
             isPendulum = true,
-            pivotX = 0,
-            pivotY = 0,
-            chainLength = 120,
-            bobRadius = 15,
+            pivotX = nil,
+            pivotY = nil,
+            chainLength = 150,
+            bobRadius = 20,
             angle = math_pi / 4,
             angularVelocity = 0,
             angularAcceleration = 0,
-            maxAngle = math_pi / 3,
-            swingSpeed = 3,
-            bobX = 0,
-            bobY = 0,
+            swingSpeed = 1.5,
             color = { 0.7, 0.5, 0.2 },
             requireTiming = true
         }
