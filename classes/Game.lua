@@ -236,7 +236,7 @@ local function updateObstacles(self, dt)
         if obstacle.isPendulum then
             if obstacle.pivotX == nil then
                 obstacle.pivotX = obstacle.x + 50
-                obstacle.pivotY = self.player.groundY - obstacle.chainLength - 45
+                obstacle.pivotY = self.player.groundY - obstacle.chainLength - 45 -- 45 is the height of the player
                 obstacle.angle = math_pi / 4
                 obstacle.angularVelocity = 0
                 obstacle.bobRadius = obstacle.width / 2
