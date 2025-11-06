@@ -234,7 +234,6 @@ local function updateObstacles(self, dt)
 
         -- Handle pendulum obstacle
         if obstacle.isPendulum then
-            -- Initialize pendulum properties if not set
             if obstacle.pivotX == nil then
                 obstacle.pivotX = obstacle.x + 50
                 obstacle.pivotY = self.player.groundY - obstacle.chainLength - 45
